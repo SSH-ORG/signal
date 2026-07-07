@@ -61,11 +61,13 @@ async def fetch_google_coursework(user: User) -> list:
         courses_resp = await client.get(
             f"{CLASSROOM_BASE}/courses",
             headers=headers,
-            params={"teacherId": "me", "courseStates": "ACTIVE"},
+            params={"teacherId": "me"},  # No state filter — return all courses regardless of status
         )
 
         if courses_resp.status_code != 200:
-            raise HTTPException(status_code=502, detail="Failed to fetch courses from Google Classroom")
+            # Print the actual Google error so we can debug it
+            print("Google Classroom API error:", courses_resp.status_code, courses_resp.text)
+            raise HTTPException(status_code=502, detail=f"Google Classroom API error: {courses_resp.text}")
 
         courses = courses_resp.json().get("courses", [])
 
