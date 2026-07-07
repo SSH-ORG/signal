@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
 
-from app.routers import auth
+from app.routes import auth
 
 # Load environment variables from .env file
 load_dotenv()
