@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
 
-from app.routes import auth
+from app.routes import auth, google, coursework
 
 # Load environment variables from .env file
 load_dotenv()
@@ -27,6 +27,12 @@ app.add_middleware(
 
 # Register the auth router — all auth routes will be available at /auth/...
 app.include_router(auth.router, prefix="/auth")
+
+# Google Classroom sync routes — /api/google/...
+app.include_router(google.router, prefix="/api/google")
+
+# Imported coursework routes — /api/coursework/...
+app.include_router(coursework.router, prefix="/api/coursework")
 
 
 # Health check endpoint — used to confirm the server is running
