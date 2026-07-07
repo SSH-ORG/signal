@@ -6,40 +6,37 @@ from sqlalchemy import engine_from_config, pool
 from dotenv import load_dotenv
 from alembic import context
 
+# Load .env so DATABASE_URL is available
 load_dotenv()
 
+# Add the server/ directory to Python's path so we can import our app modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+# Import Base so Alembic knows the schema structure
 from app.database import Base
-import app.models  # noqa: F401 — ensures all models are registered
+# Import all models so they register themselves on Base.metadata
+# Without this, autogenerate won't detect any of our tables
+import app.models  # noqa: F401
 
+# Alembic config object — reads from alembic.ini
 config = context.config
 
+# Set up Python logging using the config in alembic.ini
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Inject the DATABASE_URL from our .env into Alembic's config at runtime
+# This way we never hardcode credentials in alembic.ini
 config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL"))
 
+# Tell Alembic to compare migrations against our actual model definitions
+# This enables `alembic revision --autogenerate` to detect schema changes
 target_metadata = Base.metadata
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
 
-
+# Offline mode: generates SQL migration scripts without connecting to the DB
+# Useful for reviewing what SQL will run before applying it
 def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode.
-
-    This configures the context with just a URL
-    and not an Engine, though an Engine is acceptable
-    here as well.  By skipping the Engine creation
-    we don't even need a DBAPI to be available.
-
-    Calls to context.execute() here emit the given string to the
-    script output.
-
-    """
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
@@ -52,13 +49,9 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+# Online mode: connects to the real DB and applies migrations directly
+# This is what runs when you do `alembic upgrade head`
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode.
-
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
-
-    """
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
@@ -74,6 +67,7 @@ def run_migrations_online() -> None:
             context.run_migrations()
 
 
+# Alembic decides which mode to use based on how the command was invoked
 if context.is_offline_mode():
     run_migrations_offline()
 else:
