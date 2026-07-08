@@ -15,38 +15,61 @@ def _auth_headers(user: User) -> dict:
     return {"Authorization": f"Bearer {user.google_access_token}"}
 
 
-def _extract_submission_content(submission: dict) -> str | None:
-    # Google Classroom returns different submission types depending on the assignment
-    # We try to extract readable text from whichever type it is
+async def _extract_submission_content(submission: dict, headers: dict, client: httpx.AsyncClient) -> str | None:
+    # Extracts readable text from a student submission
+    # Handles short answers, multiple choice, and Google Doc file submissions
 
-    # Short answer assignments — the student typed a response directly
+    # Short answer — student typed directly in Classroom
     short = submission.get("shortAnswerSubmission")
     if short:
         return short.get("answer")
 
-    # Multiple choice assignments — the student picked an option
+    # Multiple choice — student picked an option
     mc = submission.get("multipleChoiceSubmission")
     if mc:
         return mc.get("answer")
 
-    # File-based assignments — student attached a Google Doc, Drive file, etc.
-    # We can't read file contents without extra Google Drive API calls (out of scope for now)
-    # So we just note that a file was submitted
+    # File/attachment submission — student attached a Google Doc, Drive file, link, etc.
     assignment = submission.get("assignmentSubmission")
     if assignment and assignment.get("attachments"):
-        attachments = assignment["attachments"]
-        titles = []
-        for a in attachments:
-            # Try to get a meaningful label from whichever attachment type it is
-            if a.get("driveFile"):
-                titles.append(a["driveFile"].get("title", "Drive file"))
-            elif a.get("youTubeVideo"):
-                titles.append(a["youTubeVideo"].get("title", "YouTube video"))
-            elif a.get("link"):
-                titles.append(a["link"].get("url", "Link"))
-            elif a.get("form"):
-                titles.append(a["form"].get("title", "Form"))
-        return f"[File submission: {', '.join(titles)}]" if titles else "[File submission]"
+        texts = []
+
+        for attachment in assignment["attachments"]:
+            drive_file = attachment.get("driveFile")
+
+            if drive_file:
+                file_id = drive_file.get("id")
+                title = drive_file.get("title", "Document")
+
+                # Google Docs can be exported as plain text so the AI can read them
+                # Other Drive files (Sheets, Slides, PDFs) are harder to extract — skip for now
+                try:
+                    export_resp = await client.get(
+                        f"https://www.googleapis.com/drive/v3/files/{file_id}/export",
+                        headers=headers,
+                        params={"mimeType": "text/plain"},
+                        timeout=10.0,
+                    )
+                    if export_resp.status_code == 200:
+                        content = export_resp.text.strip()
+                        if content:
+                            texts.append(content)
+                        else:
+                            texts.append(f"[Empty document: {title}]")
+                    else:
+                        # File exists but can't be exported as text (e.g. PDF, image, Slides)
+                        texts.append(f"[File submission: {title}]")
+                except Exception:
+                    texts.append(f"[Could not read: {title}]")
+
+            elif attachment.get("youTubeVideo"):
+                texts.append(f"[YouTube video: {attachment['youTubeVideo'].get('title', 'video')}]")
+            elif attachment.get("link"):
+                texts.append(f"[Link: {attachment['link'].get('url', '')}]")
+            elif attachment.get("form"):
+                texts.append(f"[Form: {attachment['form'].get('title', 'form')}]")
+
+        return "\n\n".join(texts) if texts else None
 
     return None
 
@@ -101,42 +124,43 @@ async def fetch_google_coursework(user: User) -> list:
 
 
 async def import_google_coursework(google_coursework_id: str, course_id: str, user: User, db: Session) -> dict:
-    # Imports a single Google Classroom assignment and all its student submissions into our database
+    # Imports a Google Classroom assignment into our database
+    # If it was already imported before, syncs any new submissions instead of blocking
     headers = _auth_headers(user)
 
-    # Don't allow importing the same assignment twice
+    # Check if this assignment has been imported before
     existing = db.query(Coursework).filter(
         Coursework.google_coursework_id == google_coursework_id,
         Coursework.user_id == user.user_id,
     ).first()
 
-    if existing:
-        raise HTTPException(status_code=400, detail="This assignment has already been imported")
-
     async with httpx.AsyncClient() as client:
-        # Step 1 — fetch the assignment details from Google Classroom
-        cw_resp = await client.get(
-            f"{CLASSROOM_BASE}/courses/{course_id}/courseWork/{google_coursework_id}",
-            headers=headers,
-        )
+        if existing:
+            # Assignment already exists — skip creating it, just sync new submissions below
+            coursework = existing
+        else:
+            # First time importing — fetch assignment details and create a record
+            cw_resp = await client.get(
+                f"{CLASSROOM_BASE}/courses/{course_id}/courseWork/{google_coursework_id}",
+                headers=headers,
+            )
 
-        if cw_resp.status_code != 200:
-            raise HTTPException(status_code=502, detail="Failed to fetch assignment from Google Classroom")
+            if cw_resp.status_code != 200:
+                raise HTTPException(status_code=502, detail="Failed to fetch assignment from Google Classroom")
 
-        cw_data = cw_resp.json()
+            cw_data = cw_resp.json()
 
-        # Step 2 — save the assignment to our database
-        coursework = Coursework(
-            title=cw_data.get("title", "Untitled"),
-            context="",  # Teacher can add rubric/context later before generating report
-            user_id=user.user_id,
-            google_coursework_id=google_coursework_id,
-        )
-        db.add(coursework)
-        db.commit()
-        db.refresh(coursework)
+            coursework = Coursework(
+                title=cw_data.get("title", "Untitled"),
+                context="",  # Teacher can add rubric/context later before generating the report
+                user_id=user.user_id,
+                google_coursework_id=google_coursework_id,
+            )
+            db.add(coursework)
+            db.commit()
+            db.refresh(coursework)
 
-        # Step 3 — fetch all student submissions for this assignment
+        # Fetch all current student submissions from Google Classroom
         subs_resp = await client.get(
             f"{CLASSROOM_BASE}/courses/{course_id}/courseWork/{google_coursework_id}/studentSubmissions",
             headers=headers,
@@ -146,11 +170,17 @@ async def import_google_coursework(google_coursework_id: str, course_id: str, us
             raise HTTPException(status_code=502, detail="Failed to fetch submissions from Google Classroom")
 
         submissions_data = subs_resp.json().get("studentSubmissions", [])
-        imported_count = 0
 
-        # Step 4 — save each submission to our database
+        # Build a set of submission IDs we already have so we don't add duplicates
+        existing_ids = {s.google_submission_id for s in coursework.submissions}
+        new_count = 0
+
         for sub in submissions_data:
-            content = _extract_submission_content(sub)
+            # Skip if we already have this submission
+            if sub["id"] in existing_ids:
+                continue
+
+            content = await _extract_submission_content(sub, headers, client)
 
             # Skip submissions with no content (student hasn't turned anything in yet)
             if not content:
@@ -162,12 +192,13 @@ async def import_google_coursework(google_coursework_id: str, course_id: str, us
                 google_submission_id=sub["id"],
             )
             db.add(submission)
-            imported_count += 1
+            new_count += 1
 
         db.commit()
 
     return {
         "coursework_id": coursework.coursework_id,
         "title": coursework.title,
-        "submissions_imported": imported_count,
+        "new_submissions": new_count,
+        "total_submissions": len(coursework.submissions) + new_count,
     }
