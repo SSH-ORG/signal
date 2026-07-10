@@ -4,12 +4,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
 
-from app.routes import auth, google, coursework
+from app.routes import auth, google, coursework, report
 
 # Load environment variables from .env file
 load_dotenv()
 
-app = FastAPI()
+# redirect_slashes=False prevents FastAPI from redirecting /route to /route/
+# That redirect breaks CORS because the browser doesn't send credentials on redirects
+app = FastAPI(redirect_slashes=False)
 
 # Session middleware — stores a signed cookie in the browser so we know who's logged in
 # The SESSION_SECRET is used to sign the cookie so it can't be tampered with
@@ -33,6 +35,10 @@ app.include_router(google.router, prefix="/api/google")
 
 # Imported coursework routes — /api/coursework/...
 app.include_router(coursework.router, prefix="/api/coursework")
+
+# Report routes — /api/coursework/{id}/report
+# Nested under coursework since a report always belongs to one assignment
+app.include_router(report.router, prefix="/api/coursework/{coursework_id}/report")
 
 
 # Health check endpoint — used to confirm the server is running

@@ -6,7 +6,7 @@ import './Dashboard.css'
 // Main dashboard shown after login
 // Left panel: browse Google Classroom by class → click to see assignments → import them
 // Right panel: assignments already imported into Signal, grouped by class
-function Dashboard({ user, onLogout }) {
+function Dashboard({ user, onLogout, onViewReport }) {
   const [gcAssignments, setGcAssignments] = useState([])    // Live from Google Classroom (flat list)
   const [imported, setImported] = useState([])              // Stored in our database
   const [selectedCourseId, setSelectedCourseId] = useState(null) // Which class is open in left panel
@@ -210,6 +210,13 @@ function Dashboard({ user, onLogout }) {
                               {cw.submission_count} {cw.submission_count === 1 ? 'submission' : 'submissions'}
                             </span>
                           </div>
+                          {/* View Report button — navigates to the ReportPage for this assignment */}
+                          <button
+                            className="action-btn action-btn--report"
+                            onClick={() => onViewReport(cw)}
+                          >
+                            View Report
+                          </button>
                         </li>
                       ))}
                     </ul>
