@@ -275,6 +275,13 @@
   border-color: var(--border);
 }
 
+/* View Report — accent filled, takes teacher to the ReportPage */
+.action-btn--report {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 .action-btn:disabled {
   opacity: 0.5;
   cursor: default;

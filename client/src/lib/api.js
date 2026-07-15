@@ -35,6 +35,30 @@ export async function getImportedCoursework() {
   return response.json()
 }
 
+// Returns the existing AI report for an assignment (404 if not generated yet)
+export async function getReport(courseworkId) {
+  const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report`, {
+    credentials: 'include',
+  })
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error('Failed to fetch report')
+  return response.json()
+}
+
+// Triggers Gemini to generate a confusion report for an assignment
+// Sends all stored submissions to the AI and saves the response
+export async function generateReport(courseworkId) {
+  const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report`, {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!response.ok) {
+    const err = await response.json()
+    throw new Error(err.detail || 'Failed to generate report')
+  }
+  return response.json()
+}
+
 // Sends the whole browser to Google's consent screen (via our backend).
 // This must be a full page redirect rather than a fetch, since Google needs
 // to redirect the actual browser tab through its login flow and back.
