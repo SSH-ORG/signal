@@ -15,6 +15,7 @@ router = APIRouter()
 # alongside the request so we know which Google Classroom course to pull from
 class ImportRequest(BaseModel):
     course_id: str  # The Google Classroom course ID the assignment belongs to
+    context: str | None = None  # Teacher-reviewed context/rubric; falls back to the Classroom description if omitted
 
 
 # GET /api/google/coursework
@@ -39,5 +40,5 @@ async def import_coursework(
     db: Session = Depends(get_db),
 ):
     return await google_controller.import_google_coursework(
-        google_coursework_id, body.course_id, user, db
+        google_coursework_id, body.course_id, user, db, context=body.context
     )
