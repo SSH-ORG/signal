@@ -29,6 +29,19 @@ async def list_google_coursework(
     return await google_controller.fetch_google_coursework(user, db)
 
 
+# GET /api/google/coursework/{google_coursework_id}/rubric?course_id=...
+# Fetches the structured rubric from Google Classroom and returns it as formatted text
+# The frontend uses this to pre-fill the context box on the Assignment Detail screen
+@router.get("/coursework/{google_coursework_id}/rubric")
+async def get_rubric(
+    google_coursework_id: str,
+    course_id: str,  # Required query param — GC rubric API needs both IDs
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    return await google_controller.fetch_rubric(google_coursework_id, course_id, user, db)
+
+
 # POST /api/google/coursework/{google_coursework_id}/import
 # Imports a specific assignment and all its student submissions into our database
 # After importing, the assignment will appear in GET /api/coursework

@@ -110,6 +110,62 @@ async def _extract_submission_content(submission: dict, user: User, db: Session,
     return None
 
 
+async def fetch_rubric(google_coursework_id: str, course_id: str, user: User, db: Session) -> dict:
+    # Fetches the structured rubric (criteria + point levels) from Google Classroom
+    # Returns a formatted text string ready to paste into the context/rubric field
+    async with httpx.AsyncClient() as client:
+        resp = await _get_with_refresh(
+            client,
+            f"{CLASSROOM_BASE}/courses/{course_id}/courseWork/{google_coursework_id}/rubrics",
+            user, db,
+        )
+
+    if resp.status_code == 404:
+        # Assignment exists but has no rubric attached
+        return {"rubric_text": None}
+
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="Failed to fetch rubric from Google Classroom")
+
+    rubrics = resp.json().get("rubrics", [])
+
+    if not rubrics:
+        return {"rubric_text": None}
+
+    # Google Classroom only allows one rubric per assignment — take the first
+    rubric = rubrics[0]
+    criteria = rubric.get("criteria", [])
+
+    if not criteria:
+        return {"rubric_text": None}
+
+    # Format each criterion and its scoring levels into readable text for the AI
+    lines = ["Rubric:"]
+    for criterion in criteria:
+        title = criterion.get("title", "Untitled Criterion")
+        description = criterion.get("description", "")
+        levels = criterion.get("levels", [])
+
+        # Sort levels by points descending so highest score appears first
+        levels_sorted = sorted(levels, key=lambda l: l.get("points", 0), reverse=True)
+        max_points = levels_sorted[0].get("points", 0) if levels_sorted else 0
+
+        lines.append(f"\n{title} ({max_points} points)")
+        if description:
+            lines.append(f"  {description}")
+
+        for level in levels_sorted:
+            level_title = level.get("title", "")
+            level_desc = level.get("description", "")
+            pts = level.get("points", 0)
+            level_line = f"  - {level_title} ({pts} pts)"
+            if level_desc:
+                level_line += f": {level_desc}"
+            lines.append(level_line)
+
+    return {"rubric_text": "\n".join(lines)}
+
+
 async def fetch_google_coursework(user: User, db: Session) -> list:
     # Fetches all active courses and their assignments from Google Classroom
     # Returns a flat list of assignments across all courses the teacher owns

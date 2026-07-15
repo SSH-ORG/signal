@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import Logo from '../components/Logo'
-import { getReport, generateReport, importCoursework, updateCourseworkContext } from '../lib/api'
+import { getReport, generateReport, importCoursework, updateCourseworkContext, getGCRubric } from '../lib/api'
 import './Screens.css'
 import './AssignmentDetailPage.css'
 
@@ -11,9 +11,13 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
   // Local copy of the imported record so this screen can react immediately to
   // import/sync/context-save actions without waiting on a parent re-fetch
   const [record, setRecord] = useState(importedRecord)
-  const [contextText, setContextText] = useState(importedRecord?.context ?? assignment.description ?? '')
+  // Use stored context if it exists, otherwise fall back to the GC description
+  // Using || instead of ?? so an empty string also falls through to the description
+  const [contextText, setContextText] = useState(importedRecord?.context || assignment.description || '')
   const [importing, setImporting] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [loadingRubric, setLoadingRubric] = useState(false) // Fetching rubric from GC
+  const [rubricError, setRubricError] = useState(null)
   const [actionError, setActionError] = useState(null)
 
   const [report, setReport] = useState(null)
@@ -68,6 +72,26 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
     }
   }
 
+  // Pulls the structured rubric from Google Classroom and appends it to the context box
+  // Appends instead of replacing so the teacher keeps any description they already have
+  async function handleLoadRubric() {
+    setLoadingRubric(true)
+    setRubricError(null)
+    try {
+      const rubricText = await getGCRubric(assignment.google_coursework_id, assignment.course_id)
+      if (!rubricText) {
+        setRubricError('No rubric found on this assignment in Google Classroom.')
+        return
+      }
+      // Append the rubric below any existing context rather than overwriting it
+      setContextText((prev) => (prev ? `${prev}\n\n${rubricText}` : rubricText))
+    } catch (err) {
+      setRubricError(err.message)
+    } finally {
+      setLoadingRubric(false)
+    }
+  }
+
   async function handleGenerate() {
     setGenerating(true)
     setReportError(null)
@@ -115,6 +139,16 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
             placeholder="No description found. Add context for the AI here (optional)."
             rows={6}
           />
+
+          {/* Load Rubric button — pulls the structured GC rubric and appends it to the context */}
+          <button
+            className="rubric-btn"
+            onClick={handleLoadRubric}
+            disabled={loadingRubric}
+          >
+            {loadingRubric ? 'Loading rubric…' : 'Load Rubric from Google Classroom'}
+          </button>
+          {rubricError && <p className="report-error">{rubricError}</p>}
 
           <div className="detail-actions">
             {!record && (

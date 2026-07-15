@@ -43,6 +43,18 @@ export async function updateCourseworkContext(courseworkId, context) {
   return response.json()
 }
 
+// Fetches the structured rubric from Google Classroom and returns it as formatted text
+// Returns null if the assignment has no rubric attached
+export async function getGCRubric(googleCourseworkId, courseId) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/google/coursework/${googleCourseworkId}/rubric?course_id=${courseId}`,
+    { credentials: 'include' }
+  )
+  if (!response.ok) throw new Error('Failed to fetch rubric from Google Classroom')
+  const data = await response.json()
+  return data.rubric_text  // null if no rubric exists
+}
+
 // Returns all assignments the teacher has already imported into Signal
 export async function getImportedCoursework() {
   const response = await fetch(`${API_BASE_URL}/api/coursework/`, {
