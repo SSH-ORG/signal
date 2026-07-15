@@ -12,16 +12,33 @@ export async function getGoogleCoursework() {
 }
 
 // Imports a specific Google Classroom assignment and its submissions into our database
-export async function importCoursework(googleCourseworkId, courseId) {
+// context is optional — the teacher-reviewed rubric/learning-goal text from the Assignment
+// Detail screen. Only used the first time an assignment is imported (ignored on re-sync).
+export async function importCoursework(googleCourseworkId, courseId, context) {
   const response = await fetch(`${API_BASE_URL}/api/google/coursework/${googleCourseworkId}/import`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ course_id: courseId }),
+    body: JSON.stringify({ course_id: courseId, context }),
   })
   if (!response.ok) {
     const err = await response.json()
     throw new Error(err.detail || 'Failed to import assignment')
+  }
+  return response.json()
+}
+
+// Updates the rubric/learning-goal context used by the AI report for an already-imported assignment
+export async function updateCourseworkContext(courseworkId, context) {
+  const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ context }),
+  })
+  if (!response.ok) {
+    const err = await response.json()
+    throw new Error(err.detail || 'Failed to update context')
   }
   return response.json()
 }

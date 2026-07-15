@@ -1,0 +1,196 @@
+/* ── Section wrapper (Context, AI Report) ────────────── */
+.detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.detail-section-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.detail-section-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+/* ── Context textarea ────────────────────────────────── */
+.context-textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.context-textarea:focus {
+  outline: none;
+  border-color: var(--accent-border);
+}
+
+.detail-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.primary-btn {
+  padding: 8px 18px;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.primary-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.primary-btn:not(:disabled):hover {
+  opacity: 0.85;
+}
+
+.secondary-btn {
+  padding: 8px 18px;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.secondary-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.secondary-btn:not(:disabled):hover {
+  border-color: var(--accent-border);
+}
+
+/* ── Status / error text ──────────────────────────────── */
+.report-status {
+  color: var(--text);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.report-error {
+  color: var(--error);
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+/* ── Empty state (no report yet) ─────────────────────── */
+.report-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.report-empty-text {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.generate-btn {
+  padding: 10px 24px;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.generate-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.generate-btn:not(:disabled):hover {
+  opacity: 0.85;
+}
+
+/* ── Report content ──────────────────────────────────── */
+.report-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.report-timestamp {
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.report-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.report-section {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-heading {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-body p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-h);
+  line-height: 1.65;
+}
+
+.section-body strong {
+  color: var(--text-h);
+  font-weight: 600;
+}

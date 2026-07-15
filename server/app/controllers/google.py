@@ -153,13 +153,20 @@ async def fetch_google_coursework(user: User, db: Session) -> list:
                     "google_coursework_id": cw["id"],
                     "course_id": course["id"],              # Needed by the import endpoint
                     "title": cw.get("title", "Untitled"),
+                    "description": cw.get("description", ""),  # Pre-fills the teacher's context field
                     "course_name": course.get("name", ""),  # Which class this assignment belongs to
                 })
 
     return all_coursework
 
 
-async def import_google_coursework(google_coursework_id: str, course_id: str, user: User, db: Session) -> dict:
+async def import_google_coursework(
+    google_coursework_id: str,
+    course_id: str,
+    user: User,
+    db: Session,
+    context: str | None = None,
+) -> dict:
     # Imports a Google Classroom assignment into our database
     # If it was already imported before, syncs any new submissions instead of blocking
 
@@ -172,6 +179,7 @@ async def import_google_coursework(google_coursework_id: str, course_id: str, us
     async with httpx.AsyncClient() as client:
         if existing:
             # Assignment already exists — skip creating it, just sync new submissions below
+            # Context is never touched here — use PATCH /api/coursework/{id} to edit it
             coursework = existing
         else:
             # First time importing — fetch assignment details and create a record
@@ -186,9 +194,11 @@ async def import_google_coursework(google_coursework_id: str, course_id: str, us
 
             cw_data = cw_resp.json()
 
+            # Use the context the teacher reviewed/edited on the Assignment Detail screen
+            # Falls back to the raw Classroom description if none was passed in
             coursework = Coursework(
                 title=cw_data.get("title", "Untitled"),
-                context="",  # Teacher can add rubric/context later before generating the report
+                context=context if context is not None else cw_data.get("description", "") or "",
                 user_id=user.user_id,
                 google_coursework_id=google_coursework_id,
             )

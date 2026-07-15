@@ -21,6 +21,28 @@ def get_all_coursework(user: User, db: Session) -> list:
     ]
 
 
+def update_context(coursework_id: int, context: str, user: User, db: Session) -> dict:
+    # Lets a teacher add or edit the rubric/learning-goal context used by the AI report
+    cw = db.query(Coursework).filter(
+        Coursework.coursework_id == coursework_id,
+        Coursework.user_id == user.user_id,
+    ).first()
+
+    if not cw:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    cw.context = context
+    db.commit()
+    db.refresh(cw)
+
+    return {
+        "coursework_id": cw.coursework_id,
+        "title": cw.title,
+        "context": cw.context,
+        "google_coursework_id": cw.google_coursework_id,
+    }
+
+
 def get_single_coursework(coursework_id: int, user: User, db: Session) -> dict:
     # Returns one assignment with its submissions and report (if generated)
     cw = db.query(Coursework).filter(
