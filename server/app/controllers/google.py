@@ -1,3 +1,4 @@
+import os
 import httpx
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from app.models.submission import Submission
 
 # Base URL for all Google Classroom API calls
 CLASSROOM_BASE = "https://classroom.googleapis.com/v1"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
 
 def _auth_headers(user: User) -> dict:
@@ -15,7 +17,40 @@ def _auth_headers(user: User) -> dict:
     return {"Authorization": f"Bearer {user.google_access_token}"}
 
 
-async def _extract_submission_content(submission: dict, headers: dict, client: httpx.AsyncClient) -> str | None:
+async def _refresh_access_token(user: User, db: Session) -> None:
+    # Access tokens expire after about an hour — use the refresh token to get a new one
+    if not user.google_refresh_token:
+        raise HTTPException(status_code=401, detail="Google session expired. Please log in again.")
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(GOOGLE_TOKEN_URL, data={
+            "client_id": os.getenv("GOOGLE_CLIENT_ID"),
+            "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
+            "refresh_token": user.google_refresh_token,
+            "grant_type": "refresh_token",
+        })
+
+    if resp.status_code != 200:
+        raise HTTPException(status_code=401, detail="Google session expired. Please log in again.")
+
+    user.google_access_token = resp.json()["access_token"]
+    db.commit()
+    print(f"Refreshed Google access token for user_id={user.user_id}")
+
+
+async def _get_with_refresh(client: httpx.AsyncClient, url: str, user: User, db: Session, **kwargs) -> httpx.Response:
+    # Makes a GET request with the teacher's access token
+    # If Google rejects it as expired, refreshes the token once and retries
+    resp = await client.get(url, headers=_auth_headers(user), **kwargs)
+
+    if resp.status_code == 401:
+        await _refresh_access_token(user, db)
+        resp = await client.get(url, headers=_auth_headers(user), **kwargs)
+
+    return resp
+
+
+async def _extract_submission_content(submission: dict, user: User, db: Session, client: httpx.AsyncClient) -> str | None:
     # Extracts readable text from a student submission
     # Handles short answers, multiple choice, and Google Doc file submissions
 
@@ -44,9 +79,10 @@ async def _extract_submission_content(submission: dict, headers: dict, client: h
                 # Google Docs can be exported as plain text so the AI can read them
                 # Other Drive files (Sheets, Slides, PDFs) are harder to extract — skip for now
                 try:
-                    export_resp = await client.get(
+                    export_resp = await _get_with_refresh(
+                        client,
                         f"https://www.googleapis.com/drive/v3/files/{file_id}/export",
-                        headers=headers,
+                        user, db,
                         params={"mimeType": "text/plain"},
                         timeout=10.0,
                     )
@@ -74,16 +110,15 @@ async def _extract_submission_content(submission: dict, headers: dict, client: h
     return None
 
 
-async def fetch_google_coursework(user: User) -> list:
+async def fetch_google_coursework(user: User, db: Session) -> list:
     # Fetches all active courses and their assignments from Google Classroom
     # Returns a flat list of assignments across all courses the teacher owns
-    headers = _auth_headers(user)
-
     async with httpx.AsyncClient() as client:
         # Step 1 — get all active courses where this teacher is the owner
-        courses_resp = await client.get(
+        courses_resp = await _get_with_refresh(
+            client,
             f"{CLASSROOM_BASE}/courses",
-            headers=headers,
+            user, db,
             params={"teacherId": "me"},  # No state filter — return all courses regardless of status
         )
 
@@ -98,9 +133,10 @@ async def fetch_google_coursework(user: User) -> list:
 
         # Step 2 — for each course, get all its assignments
         for course in courses:
-            cw_resp = await client.get(
+            cw_resp = await _get_with_refresh(
+                client,
                 f"{CLASSROOM_BASE}/courses/{course['id']}/courseWork",
-                headers=headers,
+                user, db,
             )
 
             # A 404 here just means no assignments exist for this course — skip it
@@ -126,7 +162,6 @@ async def fetch_google_coursework(user: User) -> list:
 async def import_google_coursework(google_coursework_id: str, course_id: str, user: User, db: Session) -> dict:
     # Imports a Google Classroom assignment into our database
     # If it was already imported before, syncs any new submissions instead of blocking
-    headers = _auth_headers(user)
 
     # Check if this assignment has been imported before
     existing = db.query(Coursework).filter(
@@ -140,9 +175,10 @@ async def import_google_coursework(google_coursework_id: str, course_id: str, us
             coursework = existing
         else:
             # First time importing — fetch assignment details and create a record
-            cw_resp = await client.get(
+            cw_resp = await _get_with_refresh(
+                client,
                 f"{CLASSROOM_BASE}/courses/{course_id}/courseWork/{google_coursework_id}",
-                headers=headers,
+                user, db,
             )
 
             if cw_resp.status_code != 200:
@@ -161,9 +197,10 @@ async def import_google_coursework(google_coursework_id: str, course_id: str, us
             db.refresh(coursework)
 
         # Fetch all current student submissions from Google Classroom
-        subs_resp = await client.get(
+        subs_resp = await _get_with_refresh(
+            client,
             f"{CLASSROOM_BASE}/courses/{course_id}/courseWork/{google_coursework_id}/studentSubmissions",
-            headers=headers,
+            user, db,
         )
 
         if subs_resp.status_code != 200:
@@ -180,7 +217,7 @@ async def import_google_coursework(google_coursework_id: str, course_id: str, us
             if sub["id"] in existing_ids:
                 continue
 
-            content = await _extract_submission_content(sub, headers, client)
+            content = await _extract_submission_content(sub, user, db, client)
 
             # Skip submissions with no content (student hasn't turned anything in yet)
             if not content:

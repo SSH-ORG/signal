@@ -21,8 +21,11 @@ class ImportRequest(BaseModel):
 # Returns all assignments from the teacher's active Google Classroom courses
 # Does NOT save anything to our database — just a live fetch for browsing
 @router.get("/coursework")
-async def list_google_coursework(user: User = Depends(require_login)):
-    return await google_controller.fetch_google_coursework(user)
+async def list_google_coursework(
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    return await google_controller.fetch_google_coursework(user, db)
 
 
 # POST /api/google/coursework/{google_coursework_id}/import
