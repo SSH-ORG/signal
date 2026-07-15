@@ -42,6 +42,30 @@
   border-color: var(--accent-border);
 }
 
+/* Load Rubric — subtle outline button, sits between the textarea and the action buttons */
+.rubric-btn {
+  align-self: flex-start;
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.rubric-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.rubric-btn:not(:disabled):hover {
+  opacity: 0.8;
+}
+
 .detail-actions {
   display: flex;
   gap: 12px;
