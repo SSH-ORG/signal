@@ -1,5 +1,5 @@
 import os
-from google import genai
+from groq import Groq
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -7,9 +7,9 @@ from app.models.user import User
 from app.models.coursework import Coursework
 from app.models.report import Report
 
-# Initialize the Gemini client with our API key
-# Using gemini-2.0-flash — fast and capable enough for report generation
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+# Initialize the Groq client — free tier, no credit card required
+# Uses Llama 3.3 70B which is strong enough for educational text analysis
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 
 def generate_report(coursework_id: int, user: User, db: Session) -> dict:
@@ -61,12 +61,12 @@ Analyze the submissions above and generate a class-wide confusion report. Your r
 
 Write clearly and concisely. This report is for the teacher, not the students."""
 
-    # Send the prompt to Gemini and get the report back
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt,
+    # Send the prompt to Groq (Llama 3.3 70B) and get the report back
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
     )
-    report_content = response.text
+    report_content = response.choices[0].message.content
 
     # Save the report to the database
     report = Report(
