@@ -34,7 +34,10 @@ oauth.register(
 # Redirects the teacher to Google's login page
 async def google_login(request: Request):
     redirect_uri = request.url_for("auth_callback")
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    # access_type must be passed here directly — authlib does not forward it from
+    # client_kwargs into the actual authorization URL, so it was silently dropped
+    # and Google never issued a refresh_token
+    return await oauth.google.authorize_redirect(request, redirect_uri, access_type="offline", prompt="consent")
 
 
 # Called after Google redirects back — exchanges the code for tokens
