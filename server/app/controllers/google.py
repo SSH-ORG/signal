@@ -183,7 +183,10 @@ async def fetch_google_coursework(user: User, db: Session) -> list:
             print("Google Classroom API error:", courses_resp.status_code, courses_resp.text)
             raise HTTPException(status_code=502, detail=f"Google Classroom API error: {courses_resp.text}")
 
-        courses = courses_resp.json().get("courses", [])
+        all_courses = courses_resp.json().get("courses", [])
+
+        # Skip archived courses — teachers don't need to see or import from them
+        courses = [c for c in all_courses if c.get("courseState") != "ARCHIVED"]
 
         all_coursework = []
 
