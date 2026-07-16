@@ -188,21 +188,16 @@
 /* ── Course card grid (Google Classroom style) ───────── */
 .course-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 28px;
 }
 
 .course-card {
   display: flex;
   flex-direction: column;
-  padding: 0;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
+  border-radius: 14px;
   box-shadow: var(--shadow);
   transition: transform 0.15s, box-shadow 0.15s;
 }
@@ -212,15 +207,29 @@
   border-color: var(--accent-border);
 }
 
+.course-card-main {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+}
+
 .course-card-banner {
   display: flex;
   align-items: flex-end;
-  min-height: 88px;
-  padding: 14px 16px;
+  min-height: 70px;
+  padding: 16px 22px;
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
 }
 
 .course-card-name {
-  font-size: 1.05rem;
+  font-size: 1.15rem;
   font-weight: 700;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
@@ -236,5 +245,69 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 46px 22px 60px;
+}
+
+/* ── Card footer — quick-action icon buttons ─────────── */
+.course-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.course-icon-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--text);
+  transition: background 0.15s, color 0.15s;
+}
+
+.course-icon-svg {
+  width: 19px;
+  height: 19px;
+}
+
+.course-icon-btn:hover,
+.course-icon-btn:focus-visible {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.course-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Custom tooltip — shown above the icon on hover/focus */
+.course-icon-btn::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  translate: -50% 0;
+  padding: 4px 9px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  white-space: nowrap;
+  color: #fff;
+  background: var(--text-h);
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.course-icon-btn:hover::after,
+.course-icon-btn:focus-visible::after {
+  opacity: 1;
 }
