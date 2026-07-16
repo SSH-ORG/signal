@@ -8,7 +8,7 @@ const BANNER_COLORS = ['#aa3bff', '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#
 
 // First screen after login — lists the teacher's Google Classroom courses.
 // Clicking a course drills down into AssignmentsPage.
-function CoursesPage({ gcAssignments, imported, loading, error, onLogout, onSelectCourse }) {
+function CoursesPage({ gcAssignments, loading, error, onLogout, onSelectCourse }) {
   // Derive unique courses from the flat GC assignments list
   const courses = useMemo(() => {
     const seen = new Set()
@@ -20,11 +20,6 @@ function CoursesPage({ gcAssignments, imported, loading, error, onLogout, onSele
       })
       .map((a) => ({ course_id: a.course_id, course_name: a.course_name }))
   }, [gcAssignments])
-
-  const importedIds = useMemo(
-    () => new Set(imported.map((cw) => cw.google_coursework_id)),
-    [imported]
-  )
 
   return (
     <div className="screen">
@@ -48,30 +43,42 @@ function CoursesPage({ gcAssignments, imported, loading, error, onLogout, onSele
           ) : (
             <div className="course-grid">
               {courses.map((course, i) => {
-                const total = gcAssignments.filter((a) => a.course_id === course.course_id).length
-                const importedCount = gcAssignments
-                  .filter((a) => a.course_id === course.course_id && importedIds.has(a.google_coursework_id))
-                  .length
-
                 return (
-                  <button
-                    key={course.course_id}
-                    className="course-card"
-                    onClick={() => onSelectCourse(course.course_id, course.course_name)}
-                  >
-                    <div
-                      className="course-card-banner"
-                      style={{ background: BANNER_COLORS[i % BANNER_COLORS.length] }}
+                  <div key={course.course_id} className="course-card">
+                    <button
+                      className="course-card-main"
+                      onClick={() => onSelectCourse(course.course_id, course.course_name)}
                     >
-                      <span className="course-card-name">{course.course_name}</span>
+                      <div
+                        className="course-card-banner"
+                        style={{ background: BANNER_COLORS[i % BANNER_COLORS.length] }}
+                      >
+                        <span className="course-card-name">{course.course_name}</span>
+                      </div>
+                      <div className="course-card-body" />
+                    </button>
+
+                    <div className="course-card-footer">
+                      <button
+                        type="button"
+                        className="course-icon-btn"
+                        data-tooltip="My assignments"
+                        aria-label="My assignments"
+                        onClick={() => onSelectCourse(course.course_id, course.course_name)}
+                      >
+                        <AssignmentIcon />
+                      </button>
+                      <button
+                        type="button"
+                        className="course-icon-btn"
+                        data-tooltip="My reports"
+                        aria-label="My reports"
+                        onClick={() => onSelectCourse(course.course_id, course.course_name)}
+                      >
+                        <AnalyticsIcon />
+                      </button>
                     </div>
-                    <div className="course-card-body">
-                      <span className="item-meta">{total} assignment{total !== 1 ? 's' : ''}</span>
-                      {importedCount > 0 && (
-                        <span className="badge">{importedCount} imported</span>
-                      )}
-                    </div>
-                  </button>
+                  </div>
                 )
               })}
             </div>
@@ -79,6 +86,32 @@ function CoursesPage({ gcAssignments, imported, loading, error, onLogout, onSele
         )}
       </main>
     </div>
+  )
+}
+
+// Material-style "assignment" glyph (clipboard with a checklist) — used for
+// the "My assignments" quick-action on each course card.
+function AssignmentIcon() {
+  return (
+    <svg className="course-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm7 16H5V5h2v3h10V5h2v14z"
+      />
+    </svg>
+  )
+}
+
+// Material-style "analytics" glyph (ascending bar chart) — used for the
+// "My reports" quick-action on each course card.
+function AnalyticsIcon() {
+  return (
+    <svg className="course-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M5 9.2h3V19H5V9.2zm5.6-4.2h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"
+      />
+    </svg>
   )
 }
 
