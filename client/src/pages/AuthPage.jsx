@@ -1,75 +1,146 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Logo from '../components/Logo'
-import { getCurrentUser, logout, redirectToGoogleLogin } from '../lib/api'
+import { redirectToGoogleLogin } from '../lib/api'
 import './AuthPage.css'
 
-// The only screen in the app right now. On mount it asks the backend whether
-// the browser already has a valid session cookie, then shows either the
-// Google sign-in button or a "signed in" confirmation — this lets us test
-// the whole OAuth loop (login, session check, logout) from the frontend.
+// The marketing/landing page shown before sign-in — App.jsx only renders this
+// when there's no active session. Structured like a typical product landing
+// page (nav -> hero -> features -> demo video -> closing CTA -> footer),
+// with the demo section and closing CTA fading in as the user scrolls to them.
 function AuthPage() {
-  const [user, setUser] = useState(null)
-  // 'loading' | 'signed-out' | 'signed-in' | 'error'
-  const [status, setStatus] = useState('loading')
+  // 'checking' | 'ok' | 'error' — purely informational; doesn't block the page
+  const [serverStatus, setServerStatus] = useState('checking')
+  // null while unknown, then true/false once we've checked whether a demo
+  // video file has actually been dropped in client/public/demo.mp4
+  const [videoAvailable, setVideoAvailable] = useState(null)
 
   useEffect(() => {
-    getCurrentUser()
-      .then((currentUser) => {
-        if (currentUser) {
-          setUser(currentUser)
-          setStatus('signed-in')
-        } else {
-          setStatus('signed-out')
-        }
-      })
-      .catch(() => setStatus('error'))
+    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/health`)
+      .then((res) => setServerStatus(res.ok ? 'ok' : 'error'))
+      .catch(() => setServerStatus('error'))
   }, [])
 
-  async function handleLogout() {
-    await logout()
-    setUser(null)
-    setStatus('signed-out')
-  }
+  useEffect(() => {
+    fetch('/demo.mp4', { method: 'HEAD' })
+      .then((res) => setVideoAvailable(res.ok))
+      .catch(() => setVideoAvailable(false))
+  }, [])
 
   return (
-    <main className="auth-page">
-      <div className="auth-card">
-        <Logo size="large" />
-        <p className="auth-tagline">See what your class actually understood.</p>
+    <div className="landing">
+      <nav className="landing-nav">
+        <Logo size="small" />
+        <button className="google-button google-button--nav" type="button" onClick={redirectToGoogleLogin}>
+          <GoogleIcon />
+          Sign in
+        </button>
+      </nav>
 
-        {status === 'loading' && (
-          <p className="auth-status">Checking your session…</p>
-        )}
+      <header className="landing-hero">
+        <h1 className="landing-hero-title">See what your class actually understood.</h1>
+        <p className="landing-hero-subtitle">
+          Signal connects to Google Classroom, reads every submission your students turn in,
+          and turns them into a clear report of what to reteach — before the next lesson.
+        </p>
 
-        {status === 'error' && (
+        {serverStatus === 'error' && (
           <p className="auth-status auth-status--error">
             Couldn't reach the server. Is the backend running?
           </p>
         )}
 
-        {status === 'signed-out' && (
-          <button
-            className="google-button"
-            type="button"
-            onClick={redirectToGoogleLogin}
-          >
-            <GoogleIcon />
-            Continue with Google
-          </button>
-        )}
+        <button className="google-button google-button--hero" type="button" onClick={redirectToGoogleLogin}>
+          <GoogleIcon />
+          Continue with Google
+        </button>
+      </header>
 
-        {status === 'signed-in' && user && (
-          <div className="signed-in-panel">
-            <p>
-              Signed in as <strong>{user.google_id}</strong>
-            </p>
-            <button className="logout-button" type="button" onClick={handleLogout}>
-              Log out
-            </button>
-          </div>
-        )}
-      </div>
-    </main>
+      <section className="landing-features">
+        <FeatureCard
+          icon="🔄"
+          title="Syncs with Classroom"
+          text="Connect your Google account once. Signal pulls in your classes, assignments, and every student submission automatically."
+        />
+        <FeatureCard
+          icon="🧠"
+          title="AI confusion reports"
+          text="Every submission in an assignment is analyzed together to surface the misconceptions that showed up across the whole class."
+        />
+        <FeatureCard
+          icon="✅"
+          title="Built for action"
+          text="Get concrete next steps for your next class — grounded in the rubric and learning goals you already provided."
+        />
+      </section>
+
+      <Reveal className="landing-demo">
+        <h2>See it in action</h2>
+        <p>A quick look at importing an assignment and generating a confusion report.</p>
+        <div className="demo-frame">
+          {videoAvailable ? (
+            <video className="demo-video" controls src="/demo.mp4" />
+          ) : (
+            <div className="demo-placeholder">
+              <span className="demo-play" aria-hidden="true">▶</span>
+              <p>Demo video coming soon</p>
+            </div>
+          )}
+        </div>
+      </Reveal>
+
+      <Reveal className="landing-cta">
+        <h2>Ready to see your class clearly?</h2>
+        <button className="google-button google-button--hero" type="button" onClick={redirectToGoogleLogin}>
+          <GoogleIcon />
+          Continue with Google
+        </button>
+      </Reveal>
+
+      <footer className="landing-footer">
+        <Logo size="small" />
+        <p className="landing-footer-text">Signal for teachers</p>
+      </footer>
+    </div>
+  )
+}
+
+// Fades a section up into view the first time it scrolls into the viewport.
+function Reveal({ children, className = '' }) {
+  const ref = useRef(null)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true)
+          observer.disconnect()
+        }
+      },
+      { threshold: 0.2 }
+    )
+
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  return (
+    <section ref={ref} className={`reveal ${visible ? 'reveal--visible' : ''} ${className}`}>
+      {children}
+    </section>
+  )
+}
+
+function FeatureCard({ icon, title, text }) {
+  return (
+    <div className="feature-card">
+      <span className="feature-icon" aria-hidden="true">{icon}</span>
+      <h3 className="feature-title">{title}</h3>
+      <p className="feature-text">{text}</p>
+    </div>
   )
 }
 
