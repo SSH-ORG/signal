@@ -2,6 +2,10 @@ import { useMemo } from 'react'
 import Logo from '../components/Logo'
 import './Screens.css'
 
+// Banner colors cycle across cards the same way Google Classroom assigns a
+// color per class — picked to stay in-family with the app's purple accent.
+const BANNER_COLORS = ['#aa3bff', '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#6366f1']
+
 // First screen after login — lists the teacher's Google Classroom courses.
 // Clicking a course drills down into AssignmentsPage.
 function CoursesPage({ gcAssignments, imported, loading, error, onLogout, onSelectCourse }) {
@@ -42,34 +46,35 @@ function CoursesPage({ gcAssignments, imported, loading, error, onLogout, onSele
           courses.length === 0 ? (
             <p className="empty-state">No classes found in your Google Classroom.</p>
           ) : (
-            <ul className="item-list">
-              {courses.map((course) => {
+            <div className="course-grid">
+              {courses.map((course, i) => {
                 const total = gcAssignments.filter((a) => a.course_id === course.course_id).length
                 const importedCount = gcAssignments
                   .filter((a) => a.course_id === course.course_id && importedIds.has(a.google_coursework_id))
                   .length
 
                 return (
-                  <li key={course.course_id}>
-                    <button
-                      className="item-card"
-                      onClick={() => onSelectCourse(course.course_id, course.course_name)}
+                  <button
+                    key={course.course_id}
+                    className="course-card"
+                    onClick={() => onSelectCourse(course.course_id, course.course_name)}
+                  >
+                    <div
+                      className="course-card-banner"
+                      style={{ background: BANNER_COLORS[i % BANNER_COLORS.length] }}
                     >
-                      <div className="item-info">
-                        <span className="item-name">{course.course_name}</span>
-                        <span className="item-meta">{total} assignment{total !== 1 ? 's' : ''}</span>
-                      </div>
-                      <div className="item-badges">
-                        {importedCount > 0 && (
-                          <span className="badge">{importedCount} imported</span>
-                        )}
-                        <span className="chevron">›</span>
-                      </div>
-                    </button>
-                  </li>
+                      <span className="course-card-name">{course.course_name}</span>
+                    </div>
+                    <div className="course-card-body">
+                      <span className="item-meta">{total} assignment{total !== 1 ? 's' : ''}</span>
+                      {importedCount > 0 && (
+                        <span className="badge">{importedCount} imported</span>
+                      )}
+                    </div>
+                  </button>
                 )
               })}
-            </ul>
+            </div>
           )
         )}
       </main>
