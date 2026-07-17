@@ -19,29 +19,42 @@
 
 /* ── Hero ─────────────────────────────────────────────── */
 .landing-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 82svh;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.landing-hero-content {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 20px;
-  padding: 96px 24px 80px;
-  max-width: 720px;
+  gap: 32px;
+  padding: 96px 24px;
+  max-width: 860px;
   width: 100%;
-  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .landing-hero-title {
   margin: 0;
-  font-size: clamp(2rem, 4vw, 2.75rem);
+  font-size: clamp(2.75rem, 6vw, 4.25rem);
   font-weight: 700;
-  line-height: 1.15;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
   color: var(--text-h);
 }
 
 .landing-hero-subtitle {
   margin: 0;
-  max-width: 560px;
-  font-size: 1.05rem;
+  max-width: 640px;
+  font-size: clamp(1.1rem, 1.8vw, 1.35rem);
+  line-height: 1.5;
   color: var(--text);
 }
 
@@ -86,14 +99,20 @@
 }
 
 .google-button--hero {
-  padding: 14px 24px;
-  font-size: 1rem;
+  padding: 18px 32px;
+  font-size: 1.15rem;
+  border-radius: 10px;
 }
 
 .google-icon {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
+}
+
+.google-button--hero .google-icon {
+  width: 22px;
+  height: 22px;
 }
 
 /* ── Feature grid ─────────────────────────────────────── */
@@ -104,12 +123,14 @@
   max-width: 1000px;
   width: 100%;
   margin: 0 auto;
-  padding: 0 32px 96px;
+  padding: 32px 32px 96px;
 }
 
 .feature-card {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  text-align: center;
   gap: 10px;
   padding: 28px 24px;
   background: var(--surface);
@@ -118,8 +139,20 @@
 }
 
 .feature-icon {
-  font-size: 1.75rem;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.feature-icon-svg {
+  width: 24px;
+  height: 24px;
 }
 
 .feature-title {
@@ -268,11 +301,15 @@
   }
 
   .landing-hero {
-    padding: 64px 16px 56px;
+    min-height: 70svh;
+  }
+
+  .landing-hero-content {
+    padding: 56px 16px;
   }
 
   .landing-features {
-    padding: 0 16px 64px;
+    padding: 24px 16px 64px;
   }
 
   .landing-demo {
