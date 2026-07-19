@@ -10,7 +10,8 @@ import AppShell from './components/AppShell'
 import { getCurrentUser, getGoogleCoursework, getImportedCoursework } from './lib/api'
 
 // App is the root component — it owns the shared Classroom/imported-assignment data
-// and drives the three-screen drill-down: Courses -> Assignments -> Assignment Detail.
+// and switches between screens: Classes -> Coursework -> Assignment Detail, plus
+// Account, Help, and Reports reached via the sidebar/course cards.
 function App() {
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true) // Prevents flash of wrong page on load

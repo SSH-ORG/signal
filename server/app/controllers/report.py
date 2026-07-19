@@ -30,7 +30,7 @@ def generate_report(coursework_id: int, user: User, db: Session) -> dict:
     if coursework.report:
         raise HTTPException(status_code=400, detail="A report already exists for this assignment")
 
-    # Build the list of student submissions to send to Gemini
+    # Build the list of student submissions to send to the AI
     submissions_text = "\n\n".join([
         f"Student {i + 1}:\n{sub.content}"
         for i, sub in enumerate(coursework.submissions)
@@ -43,7 +43,7 @@ def generate_report(coursework_id: int, user: User, db: Session) -> dict:
         else ""
     )
 
-    # Prompt sent to Gemini — instructs it to act as an educational analyst
+    # Prompt sent to the AI — instructs it to act as an educational analyst
     # and return a structured confusion report the teacher can act on
     prompt = f"""You are an educational analyst helping a teacher understand how their students are performing.
 

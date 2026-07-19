@@ -12,8 +12,8 @@ export async function getGoogleCoursework() {
 }
 
 // Imports a specific Google Classroom assignment and its submissions into our database
-// context is optional — the teacher-reviewed rubric/learning-goal text from the Assignment
-// Detail screen. Only used the first time an assignment is imported (ignored on re-sync).
+// context is optional — the teacher-reviewed mental model/reference material text from the
+// Assignment Detail screen. Only used the first time an assignment is imported (ignored on re-sync).
 export async function importCoursework(googleCourseworkId, courseId, context) {
   const response = await fetch(`${API_BASE_URL}/api/google/coursework/${googleCourseworkId}/import`, {
     method: 'POST',
@@ -28,7 +28,7 @@ export async function importCoursework(googleCourseworkId, courseId, context) {
   return response.json()
 }
 
-// Updates the rubric/learning-goal context used by the AI report for an already-imported assignment
+// Updates the mental model/reference material context used by the AI report for an already-imported assignment
 export async function updateCourseworkContext(courseworkId, context) {
   const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}`, {
     method: 'PATCH',
@@ -74,7 +74,7 @@ export async function getReport(courseworkId) {
   return response.json()
 }
 
-// Triggers Gemini to generate a confusion report for an assignment
+// Triggers the AI to generate a confusion report for an assignment
 // Sends all stored submissions to the AI and saves the response
 export async function generateReport(courseworkId) {
   const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report`, {
