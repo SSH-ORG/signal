@@ -1,0 +1,122 @@
+/* ── Profile form ─────────────────────────────────────── */
+.account-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.account-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+.account-input {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.account-input:focus {
+  outline: none;
+  border-color: var(--accent-border);
+}
+
+.account-saved {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+
+/* ── Notification toggle ─────────────────────────────── */
+.account-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.account-toggle-label {
+  margin: 0 0 2px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+.account-toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 24px;
+  padding: 2px;
+  background: var(--border);
+  border: none;
+  border-radius: 99px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.account-toggle--on {
+  background: var(--accent);
+}
+
+.account-toggle:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.account-toggle-knob {
+  display: block;
+  width: 20px;
+  height: 20px;
+  background: #fff;
+  border-radius: 50%;
+  transition: translate 0.2s;
+  box-shadow: var(--shadow);
+}
+
+.account-toggle--on .account-toggle-knob {
+  translate: 20px 0;
+}
+
+/* ── Delete account ───────────────────────────────────── */
+.account-delete-btn {
+  padding: 8px 18px;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--error);
+  background: transparent;
+  border: 1px solid var(--error);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.account-delete-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.account-delete-btn:not(:disabled):hover {
+  opacity: 0.8;
+}
+
+.account-delete-confirm {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 0.85rem;
+  color: var(--text);
+  line-height: 1.5;
+}

@@ -21,33 +21,19 @@
   font-size: 1.25rem;
 }
 
-/* The "i" is a stem + a dot (instead of plain text) so the dot can pulse
-   independently. Everything is sized in em so the whole mark scales cleanly
-   when the surrounding font-size changes. The stem and dot heights are set
-   explicitly (rather than as a % of the container) with room left over for a
-   visible gap between them, like a real "i" glyph. */
+/* The stem is a real dotless-i character (ı) — real inline text, so the
+   browser gives it the exact same baseline as the "s"/"gnal" around it in
+   whatever font is active, instead of relying on hand-tuned offsets that
+   only happen to line up in one font. Only the dot is a separate span,
+   absolutely positioned above the stem so it can pulse independently. */
 .logo-i {
   position: relative;
   display: inline-block;
-  width: 0.22em;
-  height: 0.82em;
-  margin: 0 0.02em;
-}
-
-.logo-i-stem {
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  translate: -50% 0;
-  width: 0.12em;
-  height: 0.48em;
-  background: currentColor;
-  border-radius: 1px;
 }
 
 .logo-i-dot {
   position: absolute;
-  top: 0;
+  bottom: 0.74em;
   left: 50%;
   translate: -50% 0;
   width: 0.22em;

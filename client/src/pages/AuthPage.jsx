@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Logo from '../components/Logo'
+import Icon from '../components/Icon'
 import ParticleBackground from '../components/ParticleBackground'
 import { redirectToGoogleLogin } from '../lib/api'
 import './AuthPage.css'
@@ -62,19 +63,19 @@ function AuthPage() {
 
       <section className="landing-features">
         <FeatureCard
-          icon={<SyncIcon />}
+          icon={<Icon name="sync" className="feature-icon-svg" />}
           title="Syncs with Classroom"
           text="Connect your Google account once. Signal pulls in your classes, assignments, and every student submission automatically."
         />
         <FeatureCard
-          icon={<CognitionIcon />}
+          icon={<Icon name="psychology" className="feature-icon-svg" />}
           title="AI confusion reports"
           text="Every submission in an assignment is analyzed together to surface the misconceptions that showed up across the whole class."
         />
         <FeatureCard
-          icon={<CheckIcon />}
+          icon={<Icon name="check" className="feature-icon-svg" />}
           title="Built for action"
-          text="Get concrete next steps for your next class — grounded in the rubric and learning goals you already provided."
+          text="Get concrete next steps for your next class — grounded in the rubric and mental model you already provided."
         />
       </section>
 
@@ -146,48 +147,6 @@ function FeatureCard({ icon, title, text }) {
       <h3 className="feature-title">{title}</h3>
       <p className="feature-text">{text}</p>
     </div>
-  )
-}
-
-// Material-style "sync" glyph — two circular arrows.
-function SyncIcon() {
-  return (
-    <svg className="feature-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"
-      />
-    </svg>
-  )
-}
-
-// Material-style "cognition" glyph — a simple node network, standing in for AI/thinking.
-function CognitionIcon() {
-  return (
-    <svg
-      className="feature-icon-svg"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="5.5" r="2.2" />
-      <circle cx="5.5" cy="17" r="2.2" />
-      <circle cx="18.5" cy="17" r="2.2" />
-      <path d="M12 7.7v3M12 10.7 6.8 15.2M12 10.7l5.2 4.5" />
-    </svg>
-  )
-}
-
-// Material-style "check" glyph.
-function CheckIcon() {
-  return (
-    <svg className="feature-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z" />
-    </svg>
   )
 }
 

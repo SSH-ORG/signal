@@ -1,3 +1,70 @@
+/* This page needs more room than the shared 780px column once Mental Model
+   and Reference Materials sit side by side. */
+.detail-main {
+  max-width: 1100px;
+}
+
+/* ── Tabs — Context / AI Report ──────────────────────── */
+.tab-list {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-btn {
+  padding: 10px 16px;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tab-btn:hover {
+  color: var(--text-h);
+}
+
+.tab-btn--active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* Submission count + the action that refreshes it, side by side. */
+.submission-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+/* ── Mental Model (left) / Reference Materials (right) ─
+   Reference Materials gets a bit more room since it holds two sub-fields
+   (description + rubric) versus Mental Model's single textarea. */
+.context-columns {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 24px;
+  align-items: start;
+}
+
+/* Tinted so Mental Model and Reference Materials each read as their own
+   zone against the white/dark Context card — a plain background wouldn't
+   show any contrast in light mode, since --bg and --surface are identical there. */
+.context-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--accent-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+
 /* ── Section wrapper (Context, AI Report) ────────────── */
 .detail-section {
   display: flex;
@@ -42,34 +109,179 @@
   border-color: var(--accent-border);
 }
 
-/* Load Rubric — subtle outline button, sits between the textarea and the action buttons */
-.rubric-btn {
-  align-self: flex-start;
-  padding: 6px 14px;
-  font: inherit;
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 1px solid var(--accent-border);
-  border-radius: 6px;
+/* Reference Materials — visually secondary to Mental Model beside it, and
+   Description/Rubric secondary within it. Each level gets its own bordered
+   card, alternating surface/bg so the nesting reads clearly at a glance. */
+.supporting-materials {
+  gap: 12px;
+}
+
+@media (max-width: 800px) {
+  .context-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Description and Rubric each get their own card, contrasting against the
+   tinted Reference Materials column they sit inside — so the two are clearly
+   distinct from each other, not just stacked with a heading between them. */
+.context-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+/* Group-level headings (Mental Model, Reference Materials) — sized up from
+   context-field-label so they read as section headers, not just another
+   field label at the same weight as Description/Rubric beneath them. */
+.context-group-label {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.context-field-label {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.context-field-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.context-field-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text);
   cursor: pointer;
-  transition: opacity 0.2s;
 }
 
-.rubric-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
+.context-field-toggle input {
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
-.rubric-btn:not(:disabled):hover {
-  opacity: 0.8;
+.context-textarea--small {
+  font-size: 0.85rem;
 }
 
 .detail-actions {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.context-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.sync-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.sync-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.sync-btn:not(:disabled):hover {
+  border-color: var(--accent-border);
+}
+
+.sync-btn-icon {
+  font-size: 18px;
+}
+
+.sync-btn--small {
+  align-self: flex-start;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+}
+
+.sync-btn--small .sync-btn-icon {
+  font-size: 15px;
+}
+
+/* Compact icon-only sync button next to the submission count — a small
+   refresh affordance rather than a full button competing with the title. */
+.sync-icon-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--text);
+  transition: background 0.15s, color 0.15s;
+}
+
+.sync-icon-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.sync-icon-btn:not(:disabled):hover,
+.sync-icon-btn:focus-visible {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.sync-icon-btn .sync-btn-icon {
+  font-size: 16px;
+}
+
+.sync-icon-btn::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  translate: -50% 0;
+  padding: 4px 9px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  white-space: nowrap;
+  color: #fff;
+  background: var(--text-h);
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.sync-icon-btn:hover::after,
+.sync-icon-btn:focus-visible::after {
+  opacity: 1;
 }
 
 .primary-btn {

@@ -1,47 +1,13 @@
 /* Shared layout for the three drill-down screens: Courses -> Assignments -> Assignment Detail */
 
 .screen {
-  min-height: 100svh;
+  flex: 1;
   display: flex;
   flex-direction: column;
   background: var(--bg);
 }
 
 /* ── Header ─────────────────────────────────────────── */
-.screen-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 32px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-
-.screen-header-left {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.logout-btn {
-  padding: 8px 16px;
-  font: inherit;
-  font-size: 0.875rem;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: border-color 0.2s;
-}
-
-.logout-btn:hover {
-  border-color: var(--accent-border);
-}
-
 .back-btn {
   padding: 6px 14px;
   font: inherit;
@@ -64,8 +30,10 @@
   flex: 1;
   max-width: 780px;
   width: 100%;
-  margin: 0 auto;
-  padding: 40px 32px;
+  /* Left padding lines up with where the topbar's logo text ends (32px topbar
+     padding + hamburger button + gap + "signal" wordmark at medium size) so
+     the heading starts right beside the logo instead of centered on the page. */
+  padding: 40px 32px 40px 170px;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -110,7 +78,7 @@
   margin-top: 8px;
 }
 
-/* ── Card / row list (courses and assignments) ───────── */
+/* ── Card / row list (assignments) ───────────────────── */
 .item-list {
   list-style: none;
   margin: 0;
@@ -273,8 +241,7 @@
 }
 
 .course-icon-svg {
-  width: 19px;
-  height: 19px;
+  font-size: 19px;
 }
 
 .course-icon-btn:hover,

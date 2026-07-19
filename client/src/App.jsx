@@ -3,10 +3,15 @@ import AuthPage from './pages/AuthPage'
 import CoursesPage from './pages/CoursesPage'
 import AssignmentsPage from './pages/AssignmentsPage'
 import AssignmentDetailPage from './pages/AssignmentDetailPage'
-import { getCurrentUser, logout, getGoogleCoursework, getImportedCoursework } from './lib/api'
+import AccountPage from './pages/AccountPage'
+import HelpPage from './pages/HelpPage'
+import ReportsPage from './pages/ReportsPage'
+import AppShell from './components/AppShell'
+import { getCurrentUser, getGoogleCoursework, getImportedCoursework } from './lib/api'
 
 // App is the root component — it owns the shared Classroom/imported-assignment data
-// and drives the three-screen drill-down: Courses -> Assignments -> Assignment Detail.
+// and switches between screens: Classes -> Coursework -> Assignment Detail, plus
+// Account, Help, and Reports reached via the sidebar/course cards.
 function App() {
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true) // Prevents flash of wrong page on load
@@ -16,7 +21,7 @@ function App() {
   const [dataLoading, setDataLoading] = useState(true)
   const [dataError, setDataError] = useState(null)
 
-  // 'courses' | 'assignments' | 'detail'
+  // 'courses' | 'assignments' | 'detail' | 'account' | 'help' | 'reports'
   const [screen, setScreen] = useState('courses')
   const [selectedCourse, setSelectedCourse] = useState(null) // { course_id, course_name }
   const [selectedAssignment, setSelectedAssignment] = useState(null) // GC assignment object
@@ -60,10 +65,15 @@ function App() {
     return <AuthPage />
   }
 
-  async function handleLogout() {
-    await logout()
+  // Called after AccountPage has already logged out / deleted the account on
+  // the backend — just resets local state so AuthPage shows again.
+  function handleLoggedOut() {
     setUser(null)
     setScreen('courses')
+  }
+
+  function handleProfileUpdated(updatedUser) {
+    setUser(updatedUser)
   }
 
   // Re-fetches the imported list only — used after import/sync/context-save so
@@ -80,6 +90,11 @@ function App() {
   function handleSelectCourse(courseId, courseName) {
     setSelectedCourse({ course_id: courseId, course_name: courseName })
     setScreen('assignments')
+  }
+
+  function handleSelectReports(courseId, courseName) {
+    setSelectedCourse({ course_id: courseId, course_name: courseName })
+    setScreen('reports')
   }
 
   function handleSelectAssignment(assignment, importedRecord) {
@@ -99,21 +114,47 @@ function App() {
     setScreen('assignments')
   }
 
-  if (screen === 'assignments' && selectedCourse) {
-    return (
+  function handleGoAccount() {
+    setScreen('account')
+  }
+
+  function handleGoHelp() {
+    setScreen('help')
+  }
+
+  // Sidebar shows Account/Help as active on those screens, Home everywhere else
+  const sidebarActive = screen === 'account' || screen === 'help' ? screen : 'home'
+
+  let page
+  if (screen === 'account') {
+    page = (
+      <AccountPage
+        user={user}
+        onProfileUpdated={handleProfileUpdated}
+        onLoggedOut={handleLoggedOut}
+      />
+    )
+  } else if (screen === 'help') {
+    page = <HelpPage />
+  } else if (screen === 'reports' && selectedCourse) {
+    page = (
+      <ReportsPage
+        courseName={selectedCourse.course_name}
+        onBack={handleBackToCourses}
+      />
+    )
+  } else if (screen === 'assignments' && selectedCourse) {
+    page = (
       <AssignmentsPage
         courseId={selectedCourse.course_id}
-        courseName={selectedCourse.course_name}
         gcAssignments={gcAssignments}
         imported={imported}
         onBack={handleBackToCourses}
         onSelectAssignment={handleSelectAssignment}
       />
     )
-  }
-
-  if (screen === 'detail' && selectedAssignment) {
-    return (
+  } else if (screen === 'detail' && selectedAssignment) {
+    page = (
       <AssignmentDetailPage
         assignment={selectedAssignment}
         importedRecord={selectedImportedRecord}
@@ -121,17 +162,29 @@ function App() {
         onDataChange={refreshImported}
       />
     )
+  } else {
+    page = (
+      <CoursesPage
+        gcAssignments={gcAssignments}
+        imported={imported}
+        loading={dataLoading}
+        error={dataError}
+        onSelectCourse={handleSelectCourse}
+        onSelectReports={handleSelectReports}
+      />
+    )
   }
 
   return (
-    <CoursesPage
-      gcAssignments={gcAssignments}
-      imported={imported}
-      loading={dataLoading}
-      error={dataError}
-      onLogout={handleLogout}
-      onSelectCourse={handleSelectCourse}
-    />
+    <AppShell
+      active={sidebarActive}
+      displayName={user.display_name}
+      onHome={handleBackToCourses}
+      onAccount={handleGoAccount}
+      onHelp={handleGoHelp}
+    >
+      {page}
+    </AppShell>
   )
 }
 

@@ -1,22 +1,48 @@
 import { useEffect, useState } from 'react'
-import Logo from '../components/Logo'
 import { getReport, generateReport, importCoursework, updateCourseworkContext, getGCRubric } from '../lib/api'
+import Icon from '../components/Icon'
 import './Screens.css'
 import './AssignmentDetailPage.css'
 
+// Splits a previously-saved combined context string back into rubric text so
+// existing saved data isn't lost by this screen's switch to separate fields.
+// If the saved context starts with the current description, whatever follows
+// is treated as the rubric/notes half; otherwise it's shown as-is rather than
+// silently dropped.
+function splitSavedContext(savedContext, description) {
+  if (!savedContext) return ''
+  if (description && savedContext.startsWith(description)) {
+    return savedContext.slice(description.length).replace(/^\n+/, '')
+  }
+  return savedContext
+}
+
 // Third screen — shown when a teacher clicks into a specific assignment.
-// Lets the teacher review/edit the context (pre-filled from the Classroom description),
-// import or sync submissions, and generate/view the AI confusion report.
+// Lets the teacher review/edit the mental model and supporting materials,
+// sync submissions, and generate/view the AI confusion report.
 function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange }) {
   // Local copy of the imported record so this screen can react immediately to
-  // import/sync/context-save actions without waiting on a parent re-fetch
+  // sync/context-save actions without waiting on a parent re-fetch
   const [record, setRecord] = useState(importedRecord)
-  // Use stored context if it exists, otherwise fall back to the GC description
-  // Using || instead of ?? so an empty string also falls through to the description
-  const [contextText, setContextText] = useState(importedRecord?.context || assignment.description || '')
-  const [importing, setImporting] = useState(false)
+  // 'context' | 'report' — only relevant once record exists (before that,
+  // there's nothing to report on yet, so Context is the only thing shown)
+  const [activeTab, setActiveTab] = useState('context')
+  // The teacher's own words — always starts blank, never touched by syncing
+  const [mentalModelText, setMentalModelText] = useState('')
+  // Description always mirrors the live Classroom description — it's free to fetch,
+  // so there's no need to sync before it's editable.
+  const [descriptionText, setDescriptionText] = useState(assignment.description || '')
+  const [rubricText, setRubricText] = useState(
+    () => splitSavedContext(importedRecord?.context, assignment.description)
+  )
+  // Each reference material can be left out of what's actually sent to the AI
+  // while still staying visible/editable — e.g. excluding the rubric if a
+  // teacher doesn't want its grading-criteria framing to influence the report.
+  const [includeDescription, setIncludeDescription] = useState(true)
+  const [includeRubric, setIncludeRubric] = useState(true)
+  const [syncingSubmissions, setSyncingSubmissions] = useState(false)
+  const [syncingRubric, setSyncingRubric] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [loadingRubric, setLoadingRubric] = useState(false) // Fetching rubric from GC
   const [rubricError, setRubricError] = useState(null)
   const [actionError, setActionError] = useState(null)
 
@@ -36,24 +62,60 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
       .finally(() => setLoadingReport(false))
   }, [courseworkId])
 
-  async function handleImportOrSync() {
-    setImporting(true)
+  // Mental model, description, and rubric are edited separately but combined
+  // into one labeled string for the AI — the report only reads a single context
+  // field, but labeling each piece lets the model tell the teacher's own goal
+  // apart from reference material instead of reading one undifferentiated blob.
+  function combinedContext() {
+    return [
+      mentalModelText && `Mental Model:\n${mentalModelText}`,
+      includeDescription && descriptionText && `Assignment Description:\n${descriptionText}`,
+      includeRubric && rubricText && `Rubric:\n${rubricText}`,
+    ].filter(Boolean).join('\n\n')
+  }
+
+  // Creates the coursework record on first click (unlocking Save Context and
+  // the AI Report tab) and re-syncs the submission count on later clicks.
+  // Lives outside the Context tab since it isn't a Context-specific action —
+  // it's the gate the rest of this page depends on.
+  async function handleSyncSubmissions() {
+    setSyncingSubmissions(true)
     setActionError(null)
     try {
-      const result = await importCoursework(assignment.google_coursework_id, assignment.course_id, contextText)
-      if (!record) setLoadingReport(true) // first import — the effect above is about to fetch the (nonexistent) report
+      const result = await importCoursework(assignment.google_coursework_id, assignment.course_id, combinedContext())
+      if (!record) setLoadingReport(true) // first sync — the effect above is about to fetch the (nonexistent) report
       setRecord((prev) => ({
         coursework_id: result.coursework_id,
         google_coursework_id: assignment.google_coursework_id,
         title: result.title,
-        context: prev ? prev.context : contextText,
+        context: prev ? prev.context : combinedContext(),
         submission_count: result.total_submissions,
       }))
       onDataChange()
     } catch (err) {
       setActionError(err.message)
     } finally {
-      setImporting(false)
+      setSyncingSubmissions(false)
+    }
+  }
+
+  // Pulls the current rubric from Google Classroom — a pure read, so it works
+  // even before the assignment has been synced into Signal at all. Replaces
+  // rubricText rather than appending, since that box mirrors Classroom's rubric.
+  async function handleSyncRubric() {
+    setSyncingRubric(true)
+    setRubricError(null)
+    try {
+      const freshRubric = await getGCRubric(assignment.google_coursework_id, assignment.course_id)
+      if (freshRubric) {
+        setRubricText(freshRubric)
+      } else {
+        setRubricError('No rubric found on this assignment in Google Classroom.')
+      }
+    } catch (err) {
+      setRubricError(err.message)
+    } finally {
+      setSyncingRubric(false)
     }
   }
 
@@ -62,7 +124,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
     setSaving(true)
     setActionError(null)
     try {
-      const updated = await updateCourseworkContext(record.coursework_id, contextText)
+      const updated = await updateCourseworkContext(record.coursework_id, combinedContext())
       setRecord((prev) => ({ ...prev, context: updated.context }))
       onDataChange()
     } catch (err) {
@@ -72,32 +134,13 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
     }
   }
 
-  // Pulls the structured rubric from Google Classroom and appends it to the context box
-  // Appends instead of replacing so the teacher keeps any description they already have
-  async function handleLoadRubric() {
-    setLoadingRubric(true)
-    setRubricError(null)
-    try {
-      const rubricText = await getGCRubric(assignment.google_coursework_id, assignment.course_id)
-      if (!rubricText) {
-        setRubricError('No rubric found on this assignment in Google Classroom.')
-        return
-      }
-      // Append the rubric below any existing context rather than overwriting it
-      setContextText((prev) => (prev ? `${prev}\n\n${rubricText}` : rubricText))
-    } catch (err) {
-      setRubricError(err.message)
-    } finally {
-      setLoadingRubric(false)
-    }
-  }
-
   async function handleGenerate() {
     setGenerating(true)
     setReportError(null)
     try {
       const data = await generateReport(record.coursework_id)
       setReport(data)
+      setActiveTab('report')
     } catch (err) {
       setReportError(err.message)
     } finally {
@@ -107,75 +150,165 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
 
   return (
     <div className="screen">
-      <header className="screen-header">
-        <Logo size="medium" />
-      </header>
-
-      <main className="screen-main">
+      <main className="screen-main detail-main">
         <div>
-          <button className="back-btn" onClick={onBack}>← {assignment.course_name}</button>
+          <button className="back-btn" onClick={onBack}>← Coursework</button>
         </div>
 
         <div>
           <h1 className="screen-title">{assignment.title}</h1>
-          <p className="screen-subtitle">
-            {record
-              ? `${record.submission_count} ${record.submission_count === 1 ? 'submission' : 'submissions'}`
-              : 'Not imported yet'}
-          </p>
+
+          {/* Submission count and the action that refreshes it live together —
+              creates the record on first click (unlocking everything below)
+              and re-syncs the count afterward. Not Context-specific, so it
+              lives outside both tabs. */}
+          <div className="submission-status">
+            <p className="screen-subtitle">
+              {record
+                ? `${record.submission_count} ${record.submission_count === 1 ? 'submission' : 'submissions'}`
+                : 'Not synced yet'}
+            </p>
+            <button
+              type="button"
+              className="sync-icon-btn"
+              onClick={handleSyncSubmissions}
+              disabled={syncingSubmissions}
+              aria-label={syncingSubmissions ? 'Syncing submissions…' : 'Sync submissions'}
+              data-tooltip={syncingSubmissions ? 'Syncing…' : 'Sync submissions'}
+            >
+              <Icon name="sync" className="sync-btn-icon" />
+            </button>
+          </div>
+          {actionError && <p className="report-error">{actionError}</p>}
         </div>
 
-        {/* Context / rubric / learning goals — pre-filled from the Classroom description */}
-        <section className="detail-section">
-          <h2 className="detail-section-title">Context</h2>
-          <p className="detail-section-hint">
-            Pre-filled from the assignment description in Google Classroom. Add or edit a rubric,
-            learning goal, or answer key here — this is what the AI uses to generate the report.
-          </p>
-          <textarea
-            className="context-textarea"
-            value={contextText}
-            onChange={(e) => setContextText(e.target.value)}
-            placeholder="No description found. Add context for the AI here (optional)."
-            rows={6}
-          />
+        {/* Once imported, Context and AI Report are separate tabs — before
+            that, there's nothing to report on yet, so just Context shows. */}
+        {record && (
+          <div className="tab-list" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'context'}
+              className={`tab-btn${activeTab === 'context' ? ' tab-btn--active' : ''}`}
+              onClick={() => setActiveTab('context')}
+            >
+              Context
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'report'}
+              className={`tab-btn${activeTab === 'report' ? ' tab-btn--active' : ''}`}
+              onClick={() => setActiveTab('report')}
+            >
+              AI Report
+            </button>
+          </div>
+        )}
 
-          {/* Load Rubric button — pulls the structured GC rubric and appends it to the context */}
-          <button
-            className="rubric-btn"
-            onClick={handleLoadRubric}
-            disabled={loadingRubric}
-          >
-            {loadingRubric ? 'Loading rubric…' : 'Load Rubric from Google Classroom'}
-          </button>
-          {rubricError && <p className="report-error">{rubricError}</p>}
+        {(!record || activeTab === 'context') && (
+          <section className="detail-section">
+            {/* No tabs exist yet before the first sync, so this needs its own
+                label; once record exists, the "Context" tab already says it. */}
+            {!record && <h2 className="detail-section-title">Context</h2>}
 
-          <div className="detail-actions">
-            {!record && (
-              <button className="primary-btn" onClick={handleImportOrSync} disabled={importing}>
-                {importing ? 'Importing…' : 'Import Assignment'}
-              </button>
-            )}
+            {/* Mental Model (primary) sits side by side with Reference
+                Materials (secondary) — both feed into the same combined
+                context string the AI report reads. */}
+            <div className="context-columns">
+              <div className="context-column">
+                <h3 className="context-group-label">Mental Model</h3>
+                <p className="detail-section-hint">
+                  What should students understand after this assignment? This is what the AI
+                  compares submissions against.
+                </p>
+                <textarea
+                  className="context-textarea"
+                  value={mentalModelText}
+                  onChange={(e) => setMentalModelText(e.target.value)}
+                  placeholder="e.g., Students should be able to explain photosynthesis in their own words."
+                  rows={8}
+                />
+              </div>
+
+              <div className="context-column supporting-materials">
+                <h3 className="context-group-label">Reference Materials</h3>
+                <p className="detail-section-hint">
+                  Materials synced from Google Classroom. Can be used alongside your mental
+                  model or as context on its own.
+                </p>
+
+                <div className="context-field">
+                  <div className="context-field-header">
+                    <h4 className="context-field-label">Assignment Description</h4>
+                    <label className="context-field-toggle">
+                      <input
+                        type="checkbox"
+                        checked={includeDescription}
+                        onChange={(e) => setIncludeDescription(e.target.checked)}
+                      />
+                      Include
+                    </label>
+                  </div>
+                  <textarea
+                    className="context-textarea context-textarea--small"
+                    value={descriptionText}
+                    onChange={(e) => setDescriptionText(e.target.value)}
+                    placeholder="No description found in Google Classroom."
+                    rows={3}
+                  />
+                </div>
+
+                <div className="context-field">
+                  <div className="context-field-header">
+                    <h4 className="context-field-label">Rubric</h4>
+                    <label className="context-field-toggle">
+                      <input
+                        type="checkbox"
+                        checked={includeRubric}
+                        onChange={(e) => setIncludeRubric(e.target.checked)}
+                      />
+                      Include
+                    </label>
+                  </div>
+                  <p className="detail-section-hint">
+                    Used as context to assess understanding. NOT for grading submissions.
+                  </p>
+                  <textarea
+                    className="context-textarea context-textarea--small"
+                    value={rubricText}
+                    onChange={(e) => setRubricText(e.target.value)}
+                    placeholder="No rubric yet — sync to pull one in from Google Classroom, or type one here."
+                    rows={3}
+                  />
+                  <button
+                    type="button"
+                    className="sync-btn sync-btn--small"
+                    onClick={handleSyncRubric}
+                    disabled={syncingRubric}
+                  >
+                    <Icon name="sync" className="sync-btn-icon" />
+                    {syncingRubric ? 'Syncing…' : 'Sync Rubric'}
+                  </button>
+                  {rubricError && <p className="report-error">{rubricError}</p>}
+                </div>
+              </div>
+            </div>
+
             {record && (
-              <>
+              <div className="context-actions">
                 <button className="primary-btn" onClick={handleSaveContext} disabled={saving}>
                   {saving ? 'Saving…' : 'Save Context'}
                 </button>
-                <button className="secondary-btn" onClick={handleImportOrSync} disabled={importing}>
-                  {importing ? 'Syncing…' : 'Sync Submissions'}
-                </button>
-              </>
+              </div>
             )}
-          </div>
+          </section>
+        )}
 
-          {actionError && <p className="report-error">{actionError}</p>}
-        </section>
-
-        {/* AI report — only once the assignment has been imported */}
-        {record && (
+        {/* AI report — its own tab, only reachable once the assignment has been synced */}
+        {record && activeTab === 'report' && (
           <section className="detail-section">
-            <h2 className="detail-section-title">AI Report</h2>
-
             {loadingReport && <p className="report-status">Loading…</p>}
 
             {!loadingReport && !report && !reportError && (

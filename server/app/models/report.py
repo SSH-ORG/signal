@@ -5,12 +5,12 @@ from app.database import Base
 
 
 # Represents the 'report' table — one AI-generated confusion report per assignment
-# A report is created by sending all submissions to Claude and storing the response
+# A report is created by sending all submissions to the AI and storing the response
 class Report(Base):
     __tablename__ = "report"
 
     report_id = Column(Integer, primary_key=True, autoincrement=True)  # Auto-generated unique ID
-    content = Column(Text, nullable=False)                              # The full AI-generated report text from Claude
+    content = Column(Text, nullable=False)                              # The full AI-generated report text
     coursework_id = Column(                                             # Which assignment this report belongs to
         Integer,
         ForeignKey("coursework.coursework_id", ondelete="CASCADE"),

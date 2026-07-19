@@ -22,7 +22,7 @@ def get_report(
 
 
 # POST /api/coursework/{coursework_id}/report
-# Sends all submissions to Gemini and generates a confusion report
+# Sends all submissions to the AI and generates a confusion report
 # Errors if a report already exists or there are no submissions
 @router.post("")
 def create_report(
