@@ -62,13 +62,15 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
       .finally(() => setLoadingReport(false))
   }, [courseworkId])
 
-  // Learning goal, description, and rubric are edited separately but combined
-  // into one string for the AI — the report only reads a single context field.
+  // Mental model, description, and rubric are edited separately but combined
+  // into one labeled string for the AI — the report only reads a single context
+  // field, but labeling each piece lets the model tell the teacher's own goal
+  // apart from reference material instead of reading one undifferentiated blob.
   function combinedContext() {
     return [
-      mentalModelText,
-      includeDescription ? descriptionText : '',
-      includeRubric ? rubricText : '',
+      mentalModelText && `Mental Model:\n${mentalModelText}`,
+      includeDescription && descriptionText && `Assignment Description:\n${descriptionText}`,
+      includeRubric && rubricText && `Rubric:\n${rubricText}`,
     ].filter(Boolean).join('\n\n')
   }
 
@@ -150,7 +152,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
     <div className="screen">
       <main className="screen-main detail-main">
         <div>
-          <button className="back-btn" onClick={onBack}>← {assignment.course_name}</button>
+          <button className="back-btn" onClick={onBack}>← Coursework</button>
         </div>
 
         <div>
@@ -233,8 +235,8 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
               <div className="context-column supporting-materials">
                 <h3 className="context-group-label">Reference Materials</h3>
                 <p className="detail-section-hint">
-                  Assignment description and rubric from Google Classroom — can be used alongside
-                  your mental model or as context on its own.
+                  Materials synced from Google Classroom. Can be used alongside your mental
+                  model or as context on its own.
                 </p>
 
                 <div className="context-field">
@@ -271,7 +273,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                     </label>
                   </div>
                   <p className="detail-section-hint">
-                    Used as context to understand expectations — not for grading submissions.
+                    Used as context to assess understanding. NOT for grading submissions.
                   </p>
                   <textarea
                     className="context-textarea context-textarea--small"

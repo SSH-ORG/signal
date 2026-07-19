@@ -36,28 +36,34 @@ def generate_report(coursework_id: int, user: User, db: Session) -> dict:
         for i, sub in enumerate(coursework.submissions)
     ])
 
-    # Optional context the teacher provided (rubric, learning goals, answer key)
+    # Optional context the teacher provided — already labeled by the frontend
+    # (Mental Model / Assignment Description / Rubric) so the model can tell
+    # the teacher's own goal apart from reference material.
     context_section = (
-        f"\nAssignment Context (rubric / learning goals provided by the teacher):\n{coursework.context}\n"
+        f"\nContext provided by the teacher:\n{coursework.context}\n"
         if coursework.context
         else ""
     )
 
     # Prompt sent to the AI — instructs it to act as an educational analyst
-    # and return a structured confusion report the teacher can act on
+    # assessing understanding (not grading), and return exactly two sections
+    # the teacher can act on. Headings use markdown ## so the frontend
+    # (ReportBody in AssignmentDetailPage.jsx) can reliably split on them.
     prompt = f"""You are an educational analyst helping a teacher understand how their students are performing.
+You are assessing understanding, not grading — focus on what students do and don't understand, not on scoring their work.
 
 Assignment: {coursework.title}
 {context_section}
 Student Submissions:
 {submissions_text}
 
-Analyze the submissions above and generate a class-wide confusion report. Your report should include:
+Analyze the submissions above and generate a confusion report with exactly two sections, each formatted as a markdown heading using ##, in this exact order:
 
-1. **Overall Understanding** — A brief summary of how well the class understood the material overall.
-2. **Common Misconceptions** — List the top misconceptions or errors you see across multiple students. Be specific.
-3. **Concepts Students Grasped Well** — What did most students get right?
-4. **Action Steps for the Teacher** — Concrete, specific suggestions the teacher can take in the next class to address the confusion.
+## Classwide Confusion Theme
+Identify the single biggest misconception or pattern of misunderstanding shown across the submissions. Be specific about what students got wrong and why, grounded in the context above if any was provided.
+
+## Next Steps
+Give 1 to 3 concrete, specific actions the teacher can take in the next class to address that confusion.
 
 Write clearly and concisely. This report is for the teacher, not the students."""
 

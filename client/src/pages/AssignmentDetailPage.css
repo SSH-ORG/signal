@@ -52,16 +52,17 @@
   align-items: start;
 }
 
+/* Tinted so Mental Model and Reference Materials each read as their own
+   zone against the white/dark Context card — a plain background wouldn't
+   show any contrast in light mode, since --bg and --surface are identical there. */
 .context-column {
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-/* Equal inset on both sides of the gap, so the divider doesn't leave one
-   column's textareas narrower than the other's. */
-.context-columns > .context-column:first-child {
-  padding-right: 16px;
+  background: var(--accent-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
 }
 
 /* ── Section wrapper (Context, AI Report) ────────────── */
@@ -108,35 +109,30 @@
   border-color: var(--accent-border);
 }
 
-/* Reference Materials — visually secondary to Mental Model beside it: a
-   left divider, muted label, and smaller textareas. */
+/* Reference Materials — visually secondary to Mental Model beside it, and
+   Description/Rubric secondary within it. Each level gets its own bordered
+   card, alternating surface/bg so the nesting reads clearly at a glance. */
 .supporting-materials {
   gap: 12px;
-  padding-left: 16px;
-  border-left: 1px solid var(--border);
 }
 
 @media (max-width: 800px) {
   .context-columns {
     grid-template-columns: 1fr;
   }
-
-  .context-columns > .context-column:first-child {
-    padding-right: 0;
-  }
-
-  .supporting-materials {
-    padding-left: 0;
-    padding-top: 16px;
-    border-left: none;
-    border-top: 1px solid var(--border);
-  }
 }
 
+/* Description and Rubric each get their own card, contrasting against the
+   tinted Reference Materials column they sit inside — so the two are clearly
+   distinct from each other, not just stacked with a heading between them. */
 .context-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
 }
 
 /* Group-level headings (Mental Model, Reference Materials) — sized up from
