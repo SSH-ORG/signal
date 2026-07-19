@@ -3,7 +3,7 @@ import './Screens.css'
 
 // Second screen — lists assignment titles for the selected class.
 // Clicking an assignment drills down into AssignmentDetailPage.
-function AssignmentsPage({ courseId, courseName, gcAssignments, imported, onBack, onSelectAssignment }) {
+function AssignmentsPage({ courseId, gcAssignments, imported, onBack, onSelectAssignment }) {
   const assignments = useMemo(
     () => gcAssignments.filter((a) => a.course_id === courseId),
     [gcAssignments, courseId]
@@ -22,8 +22,8 @@ function AssignmentsPage({ courseId, courseName, gcAssignments, imported, onBack
           <button className="back-btn" onClick={onBack}>← Classes</button>
         </div>
         <div>
-          <h1 className="screen-title">{courseName}</h1>
-          <p className="screen-subtitle">Select an assignment to view details</p>
+          <h1 className="screen-title">Coursework</h1>
+          <p className="screen-subtitle">Choose an assignment to run a report</p>
         </div>
 
         {assignments.length === 0 ? (
@@ -48,7 +48,7 @@ function AssignmentsPage({ courseId, courseName, gcAssignments, imported, onBack
                       )}
                     </div>
                     <div className="item-badges">
-                      {importedRecord && <span className="badge">Imported</span>}
+                      {importedRecord && <span className="badge">Synced</span>}
                       <span className="chevron">›</span>
                     </div>
                   </button>

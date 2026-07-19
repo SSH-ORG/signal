@@ -4,6 +4,8 @@ import CoursesPage from './pages/CoursesPage'
 import AssignmentsPage from './pages/AssignmentsPage'
 import AssignmentDetailPage from './pages/AssignmentDetailPage'
 import AccountPage from './pages/AccountPage'
+import HelpPage from './pages/HelpPage'
+import ReportsPage from './pages/ReportsPage'
 import AppShell from './components/AppShell'
 import { getCurrentUser, getGoogleCoursework, getImportedCoursework } from './lib/api'
 
@@ -18,7 +20,7 @@ function App() {
   const [dataLoading, setDataLoading] = useState(true)
   const [dataError, setDataError] = useState(null)
 
-  // 'courses' | 'assignments' | 'detail' | 'account'
+  // 'courses' | 'assignments' | 'detail' | 'account' | 'help' | 'reports'
   const [screen, setScreen] = useState('courses')
   const [selectedCourse, setSelectedCourse] = useState(null) // { course_id, course_name }
   const [selectedAssignment, setSelectedAssignment] = useState(null) // GC assignment object
@@ -89,6 +91,11 @@ function App() {
     setScreen('assignments')
   }
 
+  function handleSelectReports(courseId, courseName) {
+    setSelectedCourse({ course_id: courseId, course_name: courseName })
+    setScreen('reports')
+  }
+
   function handleSelectAssignment(assignment, importedRecord) {
     setSelectedAssignment({ ...assignment, course_name: selectedCourse.course_name })
     setSelectedImportedRecord(importedRecord)
@@ -110,8 +117,12 @@ function App() {
     setScreen('account')
   }
 
-  // Sidebar shows Account as active on the account screen, Home as active everywhere else
-  const sidebarActive = screen === 'account' ? 'account' : 'home'
+  function handleGoHelp() {
+    setScreen('help')
+  }
+
+  // Sidebar shows Account/Help as active on those screens, Home everywhere else
+  const sidebarActive = screen === 'account' || screen === 'help' ? screen : 'home'
 
   let page
   if (screen === 'account') {
@@ -122,11 +133,19 @@ function App() {
         onLoggedOut={handleLoggedOut}
       />
     )
+  } else if (screen === 'help') {
+    page = <HelpPage />
+  } else if (screen === 'reports' && selectedCourse) {
+    page = (
+      <ReportsPage
+        courseName={selectedCourse.course_name}
+        onBack={handleBackToCourses}
+      />
+    )
   } else if (screen === 'assignments' && selectedCourse) {
     page = (
       <AssignmentsPage
         courseId={selectedCourse.course_id}
-        courseName={selectedCourse.course_name}
         gcAssignments={gcAssignments}
         imported={imported}
         onBack={handleBackToCourses}
@@ -150,6 +169,7 @@ function App() {
         loading={dataLoading}
         error={dataError}
         onSelectCourse={handleSelectCourse}
+        onSelectReports={handleSelectReports}
       />
     )
   }
@@ -160,6 +180,7 @@ function App() {
       displayName={user.display_name}
       onHome={handleBackToCourses}
       onAccount={handleGoAccount}
+      onHelp={handleGoHelp}
     >
       {page}
     </AppShell>

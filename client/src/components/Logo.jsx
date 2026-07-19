@@ -1,15 +1,16 @@
 import './Logo.css'
 
-// Signal's wordmark. The "i" is built from two small divs (a stem + a dot)
-// instead of being part of the plain text, so the dot can be animated on its
-// own — it pulses like an active signal/status indicator.
+// Signal's wordmark. The "i"'s stem is a real dotless-i character (ı) so it
+// sits on the baseline exactly like the rest of the word in whatever font is
+// active — only the dot above it is a separate span, positioned absolutely so
+// it can pulse independently like an active signal/status indicator.
 function Logo({ size = 'medium' }) {
   return (
     <div className={`logo logo--${size}`} aria-label="Signal">
       <span aria-hidden="true">s</span>
       <span className="logo-i" aria-hidden="true">
         <span className="logo-i-dot" />
-        <span className="logo-i-stem" />
+        ı
       </span>
       <span aria-hidden="true">gnal</span>
     </div>

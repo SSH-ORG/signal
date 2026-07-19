@@ -29,7 +29,33 @@
   color: var(--text-h);
 }
 
-@media (max-width: 720px) {
+.app-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-icon-btn {
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text);
+  transition: background 0.15s;
+}
+
+.app-icon-btn:hover {
+  background: var(--accent-bg);
+}
+
+.app-menu-icon {
+  font-size: 22px;
+}
+
+@media (max-width: 480px) {
   .app-shell {
     flex-direction: column;
   }

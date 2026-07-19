@@ -30,8 +30,10 @@
   flex: 1;
   max-width: 780px;
   width: 100%;
-  margin: 0 auto;
-  padding: 40px 32px;
+  /* Left padding lines up with where the topbar's logo text ends (32px topbar
+     padding + hamburger button + gap + "signal" wordmark at medium size) so
+     the heading starts right beside the logo instead of centered on the page. */
+  padding: 40px 32px 40px 170px;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -76,7 +78,7 @@
   margin-top: 8px;
 }
 
-/* ── Card / row list (courses and assignments) ───────── */
+/* ── Card / row list (assignments) ───────────────────── */
 .item-list {
   list-style: none;
   margin: 0;
@@ -239,8 +241,7 @@
 }
 
 .course-icon-svg {
-  width: 19px;
-  height: 19px;
+  font-size: 19px;
 }
 
 .course-icon-btn:hover,
