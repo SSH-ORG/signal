@@ -4,17 +4,17 @@ import Icon from '../components/Icon'
 import './Screens.css'
 import './AssignmentDetailPage.css'
 
-// Splits a previously-saved combined context string back into rubric text so
-// existing saved data isn't lost by this screen's switch to separate fields.
-// If the saved context starts with the current description, whatever follows
-// is treated as the rubric/notes half; otherwise it's shown as-is rather than
-// silently dropped.
-function splitSavedContext(savedContext, description) {
+// Pulls one labeled section (Mental Model / Assignment Description / Rubric)
+// back out of a previously-saved combined context string, so reopening an
+// assignment restores each field to where it actually belongs instead of
+// resetting to blank or dumping everything into the wrong box.
+function extractContextSection(savedContext, label) {
   if (!savedContext) return ''
-  if (description && savedContext.startsWith(description)) {
-    return savedContext.slice(description.length).replace(/^\n+/, '')
-  }
-  return savedContext
+  const pattern = new RegExp(
+    `${label}:\\n([\\s\\S]*?)(?:\\n\\n(?:Mental Model|Assignment Description|Rubric):|$)`
+  )
+  const match = savedContext.match(pattern)
+  return match ? match[1].trim() : ''
 }
 
 // Third screen — shown when a teacher clicks into a specific assignment.
@@ -27,13 +27,15 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
   // 'context' | 'report' — only relevant once record exists (before that,
   // there's nothing to report on yet, so Context is the only thing shown)
   const [activeTab, setActiveTab] = useState('context')
-  // The teacher's own words — always starts blank, never touched by syncing
-  const [mentalModelText, setMentalModelText] = useState('')
+  // The teacher's own words — restored from the saved context, never touched by syncing
+  const [mentalModelText, setMentalModelText] = useState(
+    () => extractContextSection(importedRecord?.context, 'Mental Model')
+  )
   // Description always mirrors the live Classroom description — it's free to fetch,
   // so there's no need to sync before it's editable.
   const [descriptionText, setDescriptionText] = useState(assignment.description || '')
   const [rubricText, setRubricText] = useState(
-    () => splitSavedContext(importedRecord?.context, assignment.description)
+    () => extractContextSection(importedRecord?.context, 'Rubric')
   )
   // Each reference material can be left out of what's actually sent to the AI
   // while still staying visible/editable — e.g. excluding the rubric if a
@@ -43,6 +45,8 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
   const [syncingSubmissions, setSyncingSubmissions] = useState(false)
   const [syncingRubric, setSyncingRubric] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState(null)
+  const [saveSuccess, setSaveSuccess] = useState(false)
   const [rubricError, setRubricError] = useState(null)
   const [actionError, setActionError] = useState(null)
 
@@ -122,13 +126,15 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
   async function handleSaveContext() {
     if (!record) return
     setSaving(true)
-    setActionError(null)
+    setSaveError(null)
+    setSaveSuccess(false)
     try {
       const updated = await updateCourseworkContext(record.coursework_id, combinedContext())
       setRecord((prev) => ({ ...prev, context: updated.context }))
       onDataChange()
+      setSaveSuccess(true)
     } catch (err) {
-      setActionError(err.message)
+      setSaveError(err.message)
     } finally {
       setSaving(false)
     }
@@ -226,7 +232,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                 <textarea
                   className="context-textarea"
                   value={mentalModelText}
-                  onChange={(e) => setMentalModelText(e.target.value)}
+                  onChange={(e) => { setMentalModelText(e.target.value); setSaveSuccess(false) }}
                   placeholder="e.g., Students should be able to explain photosynthesis in their own words."
                   rows={8}
                 />
@@ -246,7 +252,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                       <input
                         type="checkbox"
                         checked={includeDescription}
-                        onChange={(e) => setIncludeDescription(e.target.checked)}
+                        onChange={(e) => { setIncludeDescription(e.target.checked); setSaveSuccess(false) }}
                       />
                       Include
                     </label>
@@ -254,7 +260,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                   <textarea
                     className="context-textarea context-textarea--small"
                     value={descriptionText}
-                    onChange={(e) => setDescriptionText(e.target.value)}
+                    onChange={(e) => { setDescriptionText(e.target.value); setSaveSuccess(false) }}
                     placeholder="No description found in Google Classroom."
                     rows={3}
                   />
@@ -267,7 +273,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                       <input
                         type="checkbox"
                         checked={includeRubric}
-                        onChange={(e) => setIncludeRubric(e.target.checked)}
+                        onChange={(e) => { setIncludeRubric(e.target.checked); setSaveSuccess(false) }}
                       />
                       Include
                     </label>
@@ -278,7 +284,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                   <textarea
                     className="context-textarea context-textarea--small"
                     value={rubricText}
-                    onChange={(e) => setRubricText(e.target.value)}
+                    onChange={(e) => { setRubricText(e.target.value); setSaveSuccess(false) }}
                     placeholder="No rubric yet — sync to pull one in from Google Classroom, or type one here."
                     rows={3}
                   />
@@ -301,6 +307,8 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                 <button className="primary-btn" onClick={handleSaveContext} disabled={saving}>
                   {saving ? 'Saving…' : 'Save Context'}
                 </button>
+                {saveSuccess && <p className="save-success">Saved</p>}
+                {saveError && <p className="report-error">{saveError}</p>}
               </div>
             )}
           </section>
@@ -324,10 +332,15 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
 
             {!loadingReport && report && (
               <div className="report-content">
-                <div className="report-timestamp">
-                  Generated on {new Date(report.created_at).toLocaleDateString('en-US', {
-                    month: 'long', day: 'numeric', year: 'numeric',
-                  })}
+                <div className="report-header">
+                  <div className="report-timestamp">
+                    {new Date(report.created_at).toLocaleDateString('en-US', {
+                      month: 'long', day: 'numeric', year: 'numeric',
+                    })}
+                  </div>
+                  <button className="secondary-btn" onClick={handleGenerate} disabled={generating}>
+                    {generating ? 'Refreshing…' : 'Refresh Report'}
+                  </button>
                 </div>
                 <ReportBody content={report.content} />
               </div>

@@ -2,6 +2,7 @@ import os
 from groq import Groq
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import func
 
 from app.models.user import User
 from app.models.coursework import Coursework
@@ -25,10 +26,6 @@ def generate_report(coursework_id: int, user: User, db: Session) -> dict:
     # Can't generate a report if there are no submissions to analyze
     if not coursework.submissions:
         raise HTTPException(status_code=400, detail="No submissions found for this assignment")
-
-    # A report already exists — return it instead of generating a duplicate
-    if coursework.report:
-        raise HTTPException(status_code=400, detail="A report already exists for this assignment")
 
     # Build the list of student submissions to send to the AI
     submissions_text = "\n\n".join([
@@ -60,7 +57,7 @@ Student Submissions:
 Analyze the submissions above and generate a confusion report with exactly two sections, each formatted as a markdown heading using ##, in this exact order:
 
 ## Classwide Confusion Theme
-Identify the single biggest misconception or pattern of misunderstanding shown across the submissions. Be specific about what students got wrong and why, grounded in the context above if any was provided.
+Identify the single biggest misconception or pattern of misunderstanding shown across the submissions. Be specific about what students got wrong and why, grounded in the context above if any was provided. Describe it in aggregate — do not cite or refer to individual students by number or any other identifier.
 
 ## Next Steps
 Give 1 to 3 concrete, specific actions the teacher can take in the next class to address that confusion.
@@ -74,12 +71,20 @@ Write clearly and concisely. This report is for the teacher, not the students.""
     )
     report_content = response.choices[0].message.content
 
-    # Save the report to the database
-    report = Report(
-        content=report_content,
-        coursework_id=coursework.coursework_id,
-    )
-    db.add(report)
+    # Regenerating — replace the existing report's content instead of blocking,
+    # since new submissions or an edited prompt/context are exactly why a
+    # teacher would want to redo it. Otherwise, this is the first report.
+    if coursework.report:
+        report = coursework.report
+        report.content = report_content
+        report.created_at = func.now()
+    else:
+        report = Report(
+            content=report_content,
+            coursework_id=coursework.coursework_id,
+        )
+        db.add(report)
+
     db.commit()
     db.refresh(report)
 

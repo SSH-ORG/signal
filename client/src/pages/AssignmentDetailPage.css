@@ -190,6 +190,12 @@
   gap: 8px;
 }
 
+.save-success {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+
 .sync-btn {
   display: flex;
   align-items: center;
@@ -383,6 +389,13 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.report-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .report-timestamp {
