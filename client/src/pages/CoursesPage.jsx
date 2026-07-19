@@ -1,5 +1,4 @@
 import { useMemo } from 'react'
-import Logo from '../components/Logo'
 import './Screens.css'
 
 // Banner colors cycle across cards the same way Google Classroom assigns a
@@ -8,7 +7,7 @@ const BANNER_COLORS = ['#aa3bff', '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#
 
 // First screen after login — lists the teacher's Google Classroom courses.
 // Clicking a course drills down into AssignmentsPage.
-function CoursesPage({ gcAssignments, loading, error, onLogout, onSelectCourse }) {
+function CoursesPage({ gcAssignments, loading, error, onSelectCourse }) {
   // Derive unique courses from the flat GC assignments list
   const courses = useMemo(() => {
     const seen = new Set()
@@ -23,11 +22,6 @@ function CoursesPage({ gcAssignments, loading, error, onLogout, onSelectCourse }
 
   return (
     <div className="screen">
-      <header className="screen-header">
-        <Logo size="medium" />
-        <button className="logout-btn" onClick={onLogout}>Log out</button>
-      </header>
-
       <main className="screen-main">
         <div>
           <h1 className="screen-title">Your Classes</h1>

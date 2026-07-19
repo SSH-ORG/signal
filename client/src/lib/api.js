@@ -124,3 +124,31 @@ export async function logout() {
     throw new Error(`Failed to log out (status ${response.status})`)
   }
 }
+
+// Updates editable profile fields. Pass only the fields that changed —
+// e.g. { email_notifications_enabled: true } to flip just the toggle.
+export async function updateProfile(fields) {
+  const response = await fetch(`${API_BASE_URL}/auth/profile`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  })
+  if (!response.ok) {
+    const err = await response.json()
+    throw new Error(err.detail || 'Failed to update profile')
+  }
+  return response.json()
+}
+
+// Permanently deletes the teacher's account and all their data (cascades
+// through their imported coursework, submissions, and reports).
+export async function deleteAccount() {
+  const response = await fetch(`${API_BASE_URL}/auth/account`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!response.ok) {
+    throw new Error(`Failed to delete account (status ${response.status})`)
+  }
+}

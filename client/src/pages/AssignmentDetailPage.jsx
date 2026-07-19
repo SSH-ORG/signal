@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import Logo from '../components/Logo'
 import { getReport, generateReport, importCoursework, updateCourseworkContext, getGCRubric } from '../lib/api'
 import './Screens.css'
 import './AssignmentDetailPage.css'
@@ -107,10 +106,6 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
 
   return (
     <div className="screen">
-      <header className="screen-header">
-        <Logo size="medium" />
-      </header>
-
       <main className="screen-main">
         <div>
           <button className="back-btn" onClick={onBack}>← {assignment.course_name}</button>

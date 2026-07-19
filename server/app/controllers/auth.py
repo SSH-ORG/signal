@@ -60,14 +60,20 @@ async def google_callback(request: Request, db: Session):
         existing_user.google_access_token = token.get("access_token")
         # Only overwrite refresh token if Google returned a new one (it won't always)
         existing_user.google_refresh_token = token.get("refresh_token") or existing_user.google_refresh_token
+        # Backfill profile fields for teachers who logged in before this feature existed —
+        # never overwrite once set, since display_name/email are editable in the app afterward
+        existing_user.display_name = existing_user.display_name or user_info.get("name")
+        existing_user.email = existing_user.email or user_info.get("email")
         db.commit()
         user = existing_user
     else:
-        # First login — create a new record for this teacher
+        # First login — create a new record for this teacher, prefilled from their Google profile
         user = User(
             google_id=google_id,
             google_access_token=token.get("access_token"),
             google_refresh_token=token.get("refresh_token"),
+            display_name=user_info.get("name"),
+            email=user_info.get("email"),
         )
         db.add(user)
         db.commit()
@@ -86,6 +92,17 @@ async def logout(request: Request):
     return {"message": "Logged out successfully"}
 
 
+# Shared shape for returning a teacher's profile to the frontend
+def _serialize_user(user: User) -> dict:
+    return {
+        "user_id": user.user_id,
+        "google_id": user.google_id,
+        "display_name": user.display_name,
+        "email": user.email,
+        "email_notifications_enabled": user.email_notifications_enabled,
+    }
+
+
 # Returns the currently logged-in teacher's basic info
 # The frontend calls this on page load to check if the session is still active
 async def get_me(request: Request, db: Session):
@@ -99,4 +116,27 @@ async def get_me(request: Request, db: Session):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return {"user_id": user.user_id, "google_id": user.google_id}
+    return _serialize_user(user)
+
+
+# Updates editable profile fields — only the fields the teacher actually sent are changed
+async def update_profile(display_name: str | None, email: str | None, email_notifications_enabled: bool | None, user: User, db: Session):
+    if display_name is not None:
+        user.display_name = display_name
+    if email is not None:
+        user.email = email
+    if email_notifications_enabled is not None:
+        user.email_notifications_enabled = email_notifications_enabled
+
+    db.commit()
+    db.refresh(user)
+    return _serialize_user(user)
+
+
+# Permanently deletes the teacher's account and all their data
+# Coursework/Submission/Report cascade automatically via ondelete="CASCADE" foreign keys
+async def delete_account(request: Request, user: User, db: Session):
+    db.delete(user)
+    db.commit()
+    request.session.clear()
+    return {"message": "Account deleted"}

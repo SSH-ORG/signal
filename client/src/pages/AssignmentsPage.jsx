@@ -1,5 +1,4 @@
 import { useMemo } from 'react'
-import Logo from '../components/Logo'
 import './Screens.css'
 
 // Second screen — lists assignment titles for the selected class.
@@ -18,12 +17,6 @@ function AssignmentsPage({ courseId, courseName, gcAssignments, imported, onBack
 
   return (
     <div className="screen">
-      <header className="screen-header">
-        <div className="screen-header-left">
-          <Logo size="medium" />
-        </div>
-      </header>
-
       <main className="screen-main">
         <div>
           <button className="back-btn" onClick={onBack}>← Classes</button>
