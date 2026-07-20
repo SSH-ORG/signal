@@ -296,6 +296,7 @@ async def import_google_coursework(
                 content=content,
                 coursework_id=coursework.coursework_id,
                 google_submission_id=sub["id"],
+                google_user_id=sub.get("userId"),
             )
             db.add(submission)
             new_count += 1
