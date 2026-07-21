@@ -39,6 +39,12 @@
   gap: 24px;
 }
 
+/* Courses screen needs more width than the 780px default so a full row of
+   260px course cards can fill out before wrapping to the next row. */
+.screen-main--wide {
+  max-width: 1160px;
+}
+
 @media (max-width: 600px) {
   .screen-main {
     padding: 24px 16px;
@@ -156,8 +162,8 @@
 /* ── Course card grid (Google Classroom style) ───────── */
 .course-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 28px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 32px;
 }
 
 .course-card {
@@ -190,14 +196,14 @@
 .course-card-banner {
   display: flex;
   align-items: flex-end;
-  min-height: 70px;
-  padding: 16px 22px;
+  min-height: 84px;
+  padding: 18px 24px;
   border-top-left-radius: 14px;
   border-top-right-radius: 14px;
 }
 
 .course-card-name {
-  font-size: 1.15rem;
+  font-size: 1.3rem;
   font-weight: 700;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
@@ -213,7 +219,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 46px 22px 60px;
+  padding: 52px 24px 66px;
 }
 
 /* ── Card footer — quick-action icon buttons ─────────── */

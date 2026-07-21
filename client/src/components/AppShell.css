@@ -1,7 +1,13 @@
 .app-shell {
   display: flex;
+  flex-direction: column;
   min-height: 100svh;
   background: var(--bg);
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
 }
 
 .app-shell-content {
@@ -56,7 +62,7 @@
 }
 
 @media (max-width: 480px) {
-  .app-shell {
+  .app-body {
     flex-direction: column;
   }
 

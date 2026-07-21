@@ -33,41 +33,81 @@ def generate_report(coursework_id: int, user: User, db: Session) -> dict:
         for i, sub in enumerate(coursework.submissions)
     ])
 
-    # Optional context the teacher provided — already labeled by the frontend
-    # (Mental Model / Assignment Description / Rubric) so the model can tell
-    # the teacher's own goal apart from reference material.
+    # Detect whether the teacher's context contains a rubric so we can
+    # switch the AI into criterion-by-criterion evaluation mode
+    has_rubric = bool(coursework.context and "Rubric:" in coursework.context)
+
     context_section = (
         f"\nContext provided by the teacher:\n{coursework.context}\n"
         if coursework.context
         else ""
     )
 
-    # Prompt sent to the AI — instructs it to act as an educational analyst
-    # assessing understanding (not grading), and return exactly two sections
-    # the teacher can act on. Headings use markdown ## so the frontend
-    # (ReportBody in AssignmentDetailPage.jsx) can reliably split on them.
-    prompt = f"""You are an educational analyst helping a teacher understand how their students are performing.
-You are assessing understanding, not grading — focus on what students do and don't understand, not on scoring their work.
+    if has_rubric:
+        # Rubric-aware prompt — forces the AI to evaluate every submission
+        # against every criterion and report only what is actually in the text
+        prompt = f"""You are a strict educational analyst reviewing student submissions for a teacher.
+Your job is to evaluate submissions against the rubric provided and report exactly what you find — correct responses, incorrect responses, and missing understanding. Do not generalize or invent patterns that are not directly supported by the submission text.
 
 Assignment: {coursework.title}
 {context_section}
 Student Submissions:
 {submissions_text}
 
-Analyze the submissions above and generate a confusion report with exactly two sections, each formatted as a markdown heading using ##, in this exact order:
+Using the rubric above, analyze the submissions and generate a report with exactly three sections using ## markdown headings, in this exact order:
 
-## Classwide Confusion Theme
-Identify the single biggest misconception or pattern of misunderstanding shown across the submissions. Be specific about what students got wrong and why, grounded in the context above if any was provided. Describe it in aggregate — do not cite or refer to individual students by number or any other identifier.
+## Rubric Breakdown
+For each criterion in the rubric:
+- State the criterion name
+- Describe what a correct response looks like based on the rubric
+- Describe what students actually wrote — specifically identify what was correct, what was incorrect or incomplete, and what was missing entirely
+- If most students got something wrong, quote or closely paraphrase the specific error from the submissions
+Do not refer to students by number or any identifier. Describe class-wide patterns only, grounded in what was actually written.
+
+## Incorrect or Incomplete Responses
+Identify the most common ways students answered incorrectly or incompletely. For each error type:
+- Describe the specific mistake (what they wrote or failed to address)
+- Explain why it is incorrect based on the assignment or rubric
+- Estimate how widespread it is (e.g. "most students", "roughly half", "a few students")
 
 ## Next Steps
-Give 1 to 3 concrete, specific actions the teacher can take in the next class to address that confusion.
+Give 2 to 4 direct, actionable steps the teacher should take in the next class. Each step must be tied to a specific error or gap you identified above. Be concrete — name the concept or criterion that needs to be revisited.
 
-Write clearly and concisely. This report is for the teacher, not the students."""
+Be precise. Only report what is supported by the actual submission content. Do not pad with general observations."""
+
+    else:
+        # No rubric — evaluate correctness based on the assignment itself
+        prompt = f"""You are a strict educational analyst reviewing student submissions for a teacher.
+Your job is to evaluate whether students answered the assignment correctly and report exactly what you find. Do not generalize or invent patterns — every claim you make must be directly supported by what students actually wrote.
+
+Assignment: {coursework.title}
+{context_section}
+Student Submissions:
+{submissions_text}
+
+Analyze the submissions and generate a report with exactly three sections using ## markdown headings, in this exact order:
+
+## What Students Got Right
+Describe what students answered correctly based on the assignment. Be specific — reference the actual content of the submissions. If no students answered correctly, say so directly.
+
+## What Students Got Wrong or Missed
+Identify every type of incorrect or incomplete response across the submissions:
+- Describe the specific mistake or gap (what they wrote or failed to address)
+- Explain why it is incorrect or insufficient based on the assignment
+- Estimate how widespread each error is (e.g. "most students", "roughly half", "a few students")
+If a submission is completely off-topic or does not answer the assignment, state that clearly.
+
+## Next Steps
+Give 2 to 4 direct, specific actions the teacher should take in the next class. Each action must address a specific error or gap you identified above. Name the concept that needs to be retaught or clarified.
+
+Be precise and direct. Only report what is supported by the actual submission content. Do not pad with general educational observations."""
 
     # Send the prompt to Groq (Llama 3.3 70B) and get the report back
+    # temperature=0.3 keeps responses focused and grounded — less creative drift
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
     )
     report_content = response.choices[0].message.content
 
