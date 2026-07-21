@@ -23,7 +23,7 @@ function CoursesPage({ gcAssignments, loading, error, onSelectCourse, onSelectRe
 
   return (
     <div className="screen">
-      <main className="screen-main">
+      <main className="screen-main screen-main--wide">
         <div>
           <h1 className="screen-title">Classes</h1>
           <p className="screen-subtitle">Choose a course to see its contents</p>

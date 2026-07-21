@@ -4,10 +4,6 @@
   gap: 4px;
   width: 200px;
   flex-shrink: 0;
-  align-self: flex-start;
-  position: sticky;
-  top: 0;
-  height: 100svh;
   padding: 20px 12px;
   border-right: 1px solid var(--border);
   background: var(--surface);
@@ -47,7 +43,6 @@
 @media (max-width: 480px) {
   .sidebar {
     width: 100%;
-    height: auto;
     flex-direction: row;
     justify-content: center;
     border-right: none;
