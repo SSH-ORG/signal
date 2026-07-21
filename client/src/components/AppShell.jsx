@@ -11,7 +11,7 @@ import './AppShell.css'
 // The top bar always spans the full width, so the menu button and logo never
 // move. The sidebar starts closed and opens underneath the top bar, pushing
 // the main content over rather than the whole page.
-function AppShell({ active, displayName, onHome, onAccount, onHelp, children }) {
+function AppShell({ active, displayName, onHome, onReports, onAccount, onHelp, children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   function toggleSidebar() {
@@ -36,7 +36,15 @@ function AppShell({ active, displayName, onHome, onAccount, onHelp, children }) 
         <span className="app-topbar-greeting">Hi, {displayName || 'there'}</span>
       </header>
       <div className="app-body">
-        {sidebarOpen && <Sidebar active={active} onHome={onHome} onAccount={onAccount} onHelp={onHelp} />}
+        {sidebarOpen && (
+          <Sidebar
+            active={active}
+            onHome={onHome}
+            onReports={onReports}
+            onAccount={onAccount}
+            onHelp={onHelp}
+          />
+        )}
         <div className="app-shell-content">{children}</div>
       </div>
     </div>

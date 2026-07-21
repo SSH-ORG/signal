@@ -97,6 +97,19 @@ export async function generateReport(courseworkId) {
   return response.json()
 }
 
+// Emails the existing report for an assignment to the teacher's own address
+export async function emailReport(courseworkId) {
+  const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report/email`, {
+    method: 'POST',
+    credentials: 'include',
+  })
+  if (!response.ok) {
+    const err = await response.json()
+    throw new Error(err.detail || 'Failed to email report')
+  }
+  return response.json()
+}
+
 // Sends the whole browser to Google's consent screen (via our backend).
 // This must be a full page redirect rather than a fetch, since Google needs
 // to redirect the actual browser tab through its login flow and back.

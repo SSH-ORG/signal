@@ -11,7 +11,7 @@ import { getCurrentUser, getGoogleCoursework, getImportedCoursework } from './li
 
 // App is the root component — it owns the shared Classroom/imported-assignment data
 // and switches between screens: Classes -> Coursework -> Assignment Detail, plus
-// Account, Help, and Reports reached via the sidebar/course cards.
+// Account, Help, and Reports reached via the sidebar.
 function App() {
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true) // Prevents flash of wrong page on load
@@ -92,11 +92,6 @@ function App() {
     setScreen('assignments')
   }
 
-  function handleSelectReports(courseId, courseName) {
-    setSelectedCourse({ course_id: courseId, course_name: courseName })
-    setScreen('reports')
-  }
-
   function handleSelectAssignment(assignment, importedRecord) {
     setSelectedAssignment({ ...assignment, course_name: selectedCourse.course_name })
     setSelectedImportedRecord(importedRecord)
@@ -156,7 +151,14 @@ function App() {
   } else if (screen === 'help') {
     page = <HelpPage />
   } else if (screen === 'reports') {
-    page = <ReportsPage onViewAssignment={handleViewAssignmentById} />
+    page = (
+      <ReportsPage
+        gcAssignments={gcAssignments}
+        onViewAssignment={handleViewAssignmentById}
+        onGoToAssignments={handleSelectCourse}
+        onGoToClasses={handleBackToCourses}
+      />
+    )
   } else if (screen === 'assignments' && selectedCourse) {
     page = (
       <AssignmentsPage
@@ -184,7 +186,6 @@ function App() {
         loading={dataLoading}
         error={dataError}
         onSelectCourse={handleSelectCourse}
-        onSelectReports={handleSelectReports}
       />
     )
   }

@@ -1,3 +1,146 @@
+.reports-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.reports-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.reports-filter-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.reports-filter select {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  padding: 6px 30px 6px 12px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.reports-filter select:hover {
+  opacity: 0.8;
+}
+
+.reports-filter select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.reports-filter-chevron {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  translate: 0 -50%;
+  font-size: 18px;
+  color: var(--accent);
+  pointer-events: none;
+}
+
+.reports-empty-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-left: 4px;
+  vertical-align: middle;
+  font-size: 1rem;
+  color: var(--accent);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.reports-empty-icon-btn:hover,
+.reports-empty-icon-btn:focus-visible {
+  background: var(--accent-bg);
+}
+
+.reports-empty-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.reports-item-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.reports-email-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  margin-left: 8px;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.reports-email-btn:hover,
+.reports-email-btn:focus-visible {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.reports-email-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.reports-email-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.reports-email-status {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: 0.78rem;
+  color: var(--accent);
+}
+
+.reports-email-status--error {
+  color: var(--error);
+}
+
 .reports-group {
   display: flex;
   flex-direction: column;
