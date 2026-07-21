@@ -5,7 +5,7 @@ import './Sidebar.css'
 // Kept to just Home, Account, and Help — the courses screen already lists
 // classes, so there's no need to duplicate that list here the way
 // Classroom's sidebar does.
-function Sidebar({ active, onHome, onAccount, onHelp }) {
+function Sidebar({ active, onHome, onReports, onAccount, onHelp }) {
   return (
     <nav className="sidebar" aria-label="Main">
       <button
@@ -15,6 +15,16 @@ function Sidebar({ active, onHome, onAccount, onHelp }) {
       >
         <Icon name="home" className="sidebar-icon" />
         <span>Home</span>
+      </button>
+
+      {/* Reports — shows all generated AI reports across every course */}
+      <button
+        type="button"
+        className={`sidebar-item${active === 'reports' ? ' sidebar-item--active' : ''}`}
+        onClick={onReports}
+      >
+        <Icon name="description" className="sidebar-icon" />
+        <span>Reports</span>
       </button>
 
       <button

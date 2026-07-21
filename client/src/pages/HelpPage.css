@@ -1,0 +1,81 @@
+.help-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.help-step {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+/* Numbered circle on the left of each step */
+.help-step-number {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+  font-size: 0.875rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+
+.help-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.help-step-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.help-step-text {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.help-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.help-list li {
+  font-size: 0.875rem;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* Tip box at the bottom */
+.help-tip {
+  padding: 16px 20px;
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 10px;
+}
+
+.help-tip p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-h);
+  line-height: 1.6;
+}

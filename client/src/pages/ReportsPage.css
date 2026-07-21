@@ -1,0 +1,17 @@
+.reports-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Course heading above each group of reports */
+.reports-group-title {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}

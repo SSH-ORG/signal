@@ -136,6 +136,27 @@ Be precise and direct. Only report what is supported by the actual submission co
     }
 
 
+def get_all_reports(user: User, db: Session) -> list:
+    # Returns all assignments that have a generated report for this teacher
+    # Used by the global Reports page in the sidebar
+    coursework_list = db.query(Coursework).filter(
+        Coursework.user_id == user.user_id
+    ).all()
+
+    return [
+        {
+            "coursework_id": cw.coursework_id,
+            "title": cw.title,
+            "google_coursework_id": cw.google_coursework_id,
+            "course_name": cw.course_name or "",  # Stored at import time so it's available even for archived courses
+            "report_id": cw.report.report_id,
+            "created_at": cw.report.created_at,
+        }
+        for cw in coursework_list
+        if cw.report
+    ]
+
+
 def get_report(coursework_id: int, user: User, db: Session) -> dict:
     # Returns the existing report for an assignment if one has been generated
     coursework = db.query(Coursework).filter(

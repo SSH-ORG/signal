@@ -225,6 +225,7 @@ async def import_google_coursework(
     user: User,
     db: Session,
     context: str | None = None,
+    course_name: str = "",
 ) -> dict:
     # Imports a Google Classroom assignment into our database
     # If it was already imported before, syncs any new submissions instead of blocking
@@ -260,6 +261,7 @@ async def import_google_coursework(
                 context=context if context is not None else cw_data.get("description", "") or "",
                 user_id=user.user_id,
                 google_coursework_id=google_coursework_id,
+                course_name=course_name,  # Stored so it's available even if the course is later archived
             )
             db.add(coursework)
             db.commit()
