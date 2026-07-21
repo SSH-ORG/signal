@@ -97,6 +97,19 @@ export async function generateReport(courseworkId) {
   return response.json()
 }
 
+// Deletes the generated report for an assignment so the teacher can regenerate
+export async function deleteReport(courseworkId) {
+  const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!response.ok) {
+    const err = await response.json()
+    throw new Error(err.detail || 'Failed to delete report')
+  }
+  return response.json()
+}
+
 // Emails the existing report for an assignment to the teacher's own address
 export async function emailReport(courseworkId) {
   const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report/email`, {

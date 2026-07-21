@@ -182,6 +182,24 @@ def get_report(coursework_id: int, user: User, db: Session) -> dict:
     }
 
 
+def delete_report(coursework_id: int, user: User, db: Session) -> dict:
+    # Deletes the report for an assignment so the teacher can regenerate a fresh one
+    coursework = db.query(Coursework).filter(
+        Coursework.coursework_id == coursework_id,
+        Coursework.user_id == user.user_id,
+    ).first()
+
+    if not coursework:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    if not coursework.report:
+        raise HTTPException(status_code=404, detail="No report to delete")
+
+    db.delete(coursework.report)
+    db.commit()
+    return {"deleted": True}
+
+
 async def email_report(coursework_id: int, user: User, db: Session) -> dict:
     # Emails the existing report to the teacher's own address via Resend
     # Uses Resend (HTTP API) instead of Gmail so no extra OAuth scope is needed
