@@ -8,7 +8,7 @@ import './AppShell.css'
 // (Home/Account) and a top bar with the Signal logo and a "Hi, {name}" greeting
 // in place of the old per-page Log out button (logout now lives on the Account page).
 // The sidebar starts closed — only the menu icon opens/closes it.
-function AppShell({ active, displayName, onHome, onAccount, onHelp, children }) {
+function AppShell({ active, displayName, onHome, onReports, onAccount, onHelp, children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   function toggleSidebar() {
@@ -17,7 +17,7 @@ function AppShell({ active, displayName, onHome, onAccount, onHelp, children }) 
 
   return (
     <div className="app-shell">
-      {sidebarOpen && <Sidebar active={active} onHome={onHome} onAccount={onAccount} onHelp={onHelp} />}
+      {sidebarOpen && <Sidebar active={active} onHome={onHome} onReports={onReports} onAccount={onAccount} onHelp={onHelp} />}
       <div className="app-shell-content">
         <header className="app-topbar">
           <div className="app-topbar-left">

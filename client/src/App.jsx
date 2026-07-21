@@ -122,8 +122,27 @@ function App() {
     setScreen('help')
   }
 
-  // Sidebar shows Account/Help as active on those screens, Home everywhere else
-  const sidebarActive = screen === 'account' || screen === 'help' ? screen : 'home'
+  function handleGoReports() {
+    setScreen('reports')
+  }
+
+  // Navigate to an assignment's detail page directly from the Reports page
+  // Looks up the full assignment object and imported record by coursework_id
+  function handleViewAssignmentById(courseworkId) {
+    const importedRecord = imported.find((cw) => cw.coursework_id === courseworkId)
+    if (!importedRecord) return
+    const gcAssignment = gcAssignments.find(
+      (a) => a.google_coursework_id === importedRecord.google_coursework_id
+    )
+    if (!gcAssignment) return
+    setSelectedCourse({ course_id: gcAssignment.course_id, course_name: gcAssignment.course_name })
+    setSelectedAssignment({ ...gcAssignment, course_name: gcAssignment.course_name })
+    setSelectedImportedRecord(importedRecord)
+    setScreen('detail')
+  }
+
+  // Sidebar shows the matching item as active; Home is the fallback
+  const sidebarActive = ['account', 'help', 'reports'].includes(screen) ? screen : 'home'
 
   let page
   if (screen === 'account') {
@@ -136,13 +155,8 @@ function App() {
     )
   } else if (screen === 'help') {
     page = <HelpPage />
-  } else if (screen === 'reports' && selectedCourse) {
-    page = (
-      <ReportsPage
-        courseName={selectedCourse.course_name}
-        onBack={handleBackToCourses}
-      />
-    )
+  } else if (screen === 'reports') {
+    page = <ReportsPage onViewAssignment={handleViewAssignmentById} />
   } else if (screen === 'assignments' && selectedCourse) {
     page = (
       <AssignmentsPage
@@ -180,6 +194,7 @@ function App() {
       active={sidebarActive}
       displayName={user.display_name}
       onHome={handleBackToCourses}
+      onReports={handleGoReports}
       onAccount={handleGoAccount}
       onHelp={handleGoHelp}
     >

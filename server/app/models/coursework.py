@@ -12,6 +12,7 @@ class Coursework(Base):
     context = Column(Text, default="")                                       # Optional rubric/learning goals/answer key for the AI
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)  # Which teacher owns this
     google_coursework_id = Column(Text)                                      # ID from Google Classroom (null if manually created)
+    course_name = Column(Text, default="")                                    # Google Classroom course name — stored so it's available even after a course is archived
 
     # One coursework has many submissions (one per student)
     # cascade="all, delete" means deleting a coursework also deletes its submissions

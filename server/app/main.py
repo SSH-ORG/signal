@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
 
-from app.routes import auth, google, coursework, report
+from app.routes import auth, google, coursework, report, reports_list
 
 # Load environment variables from .env file
 load_dotenv()
@@ -39,6 +39,10 @@ app.include_router(coursework.router, prefix="/api/coursework")
 # Report routes — /api/coursework/{id}/report
 # Nested under coursework since a report always belongs to one assignment
 app.include_router(report.router, prefix="/api/coursework/{coursework_id}/report")
+
+# Global reports list — /api/reports
+# Returns all assignments with generated reports across all courses
+app.include_router(reports_list.router, prefix="/api/reports")
 
 
 # Health check endpoint — used to confirm the server is running

@@ -14,12 +14,12 @@ export async function getGoogleCoursework() {
 // Imports a specific Google Classroom assignment and its submissions into our database
 // context is optional — the teacher-reviewed mental model/reference material text from the
 // Assignment Detail screen. Only used the first time an assignment is imported (ignored on re-sync).
-export async function importCoursework(googleCourseworkId, courseId, context) {
+export async function importCoursework(googleCourseworkId, courseId, context, courseName = '') {
   const response = await fetch(`${API_BASE_URL}/api/google/coursework/${googleCourseworkId}/import`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ course_id: courseId, context }),
+    body: JSON.stringify({ course_id: courseId, context, course_name: courseName }),
   })
   if (!response.ok) {
     const err = await response.json()
@@ -61,6 +61,15 @@ export async function getImportedCoursework() {
     credentials: 'include',
   })
   if (!response.ok) throw new Error('Failed to fetch imported assignments')
+  return response.json()
+}
+
+// Returns all assignments that have a generated report, across all courses
+export async function getAllReports() {
+  const response = await fetch(`${API_BASE_URL}/api/reports`, {
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error('Failed to fetch reports')
   return response.json()
 }
 
