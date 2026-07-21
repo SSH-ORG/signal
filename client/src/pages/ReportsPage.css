@@ -130,6 +130,45 @@
   cursor: default;
 }
 
+.reports-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.reports-delete-btn:hover,
+.reports-delete-btn:focus-visible {
+  background: #fff0f0;
+  color: var(--error);
+}
+
+.reports-delete-btn:focus-visible {
+  outline: 2px solid var(--error);
+  outline-offset: 2px;
+}
+
+.reports-delete-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Side-by-side filter row */
+.reports-filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .reports-email-status {
   margin: 4px 0 0;
   padding-left: 16px;

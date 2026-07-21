@@ -42,3 +42,14 @@ async def email_report(
     db: Session = Depends(get_db),
 ):
     return await report_controller.email_report(coursework_id, user, db)
+
+
+# DELETE /api/coursework/{coursework_id}/report
+# Deletes the report so the teacher can regenerate a fresh one
+@router.delete("")
+def delete_report(
+    coursework_id: int,
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    return report_controller.delete_report(coursework_id, user, db)

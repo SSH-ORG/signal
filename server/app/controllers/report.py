@@ -1,4 +1,6 @@
 import os
+import re
+import httpx
 from groq import Groq
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -7,7 +9,8 @@ from sqlalchemy.sql import func
 from app.models.user import User
 from app.models.coursework import Coursework
 from app.models.report import Report
-from app.controllers import gmail as gmail_controller
+
+RESEND_API_URL = "https://api.resend.com/emails"
 
 # Initialize the Groq client — free tier, no credit card required
 # Uses Llama 3.3 70B which is strong enough for educational text analysis
@@ -179,8 +182,8 @@ def get_report(coursework_id: int, user: User, db: Session) -> dict:
     }
 
 
-async def email_report(coursework_id: int, user: User, db: Session) -> dict:
-    # Emails the existing report for an assignment to the teacher's own address
+def delete_report(coursework_id: int, user: User, db: Session) -> dict:
+    # Deletes the report for an assignment so the teacher can regenerate a fresh one
     coursework = db.query(Coursework).filter(
         Coursework.coursework_id == coursework_id,
         Coursework.user_id == user.user_id,
@@ -190,12 +193,107 @@ async def email_report(coursework_id: int, user: User, db: Session) -> dict:
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     if not coursework.report:
-        raise HTTPException(status_code=404, detail="No report made yet for this assignment")
+        raise HTTPException(status_code=404, detail="No report to delete")
+
+    db.delete(coursework.report)
+    db.commit()
+    return {"deleted": True}
+
+
+async def email_report(coursework_id: int, user: User, db: Session) -> dict:
+    # Emails the existing report to the teacher's own address via Resend
+    # Uses Resend (HTTP API) instead of Gmail so no extra OAuth scope is needed
+    coursework = db.query(Coursework).filter(
+        Coursework.coursework_id == coursework_id,
+        Coursework.user_id == user.user_id,
+    ).first()
+
+    if not coursework:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    if not coursework.report:
+        raise HTTPException(status_code=400, detail="No report generated yet for this assignment")
 
     if not user.email:
         raise HTTPException(status_code=400, detail="No email address on file for your account")
 
-    html_body = gmail_controller.build_report_email_html(coursework.title, coursework.report.content)
-    await gmail_controller.send_email(user, db, subject=coursework.title, html_body=html_body)
+    api_key = os.getenv("RESEND_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Email is not configured on this server")
 
-    return {"sent": True}
+    html_body = _report_to_html(coursework.title, coursework.report.content)
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            RESEND_API_URL,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "from": "Signal <signal@marcylab.us>",
+                "to": [user.email],
+                "subject": f"Signal Report: {coursework.title}",
+                "html": html_body,
+            },
+            timeout=15.0,
+        )
+
+    if resp.status_code not in (200, 201):
+        try:
+            detail = resp.json().get("message", "Failed to send email")
+        except Exception:
+            detail = "Failed to send email"
+        raise HTTPException(status_code=502, detail=detail)
+
+    return {"sent": True, "to": user.email}
+
+
+def _report_to_html(title: str, content: str) -> str:
+    # Converts the AI report markdown into a styled HTML email body
+    raw_sections = re.split(r'(?=##\s)', content.strip())
+
+    sections_html = ""
+    for raw in raw_sections:
+        if not raw.strip():
+            continue
+        lines = raw.strip().split('\n')
+        heading = re.sub(r'^#+\s*', '', lines[0]).strip()
+        body_lines = [l for l in lines[1:] if l.strip()]
+
+        body_html = ""
+        in_list = False
+        for line in body_lines:
+            is_bullet = re.match(r'^[\-\*]\s', line)
+            if is_bullet:
+                if not in_list:
+                    body_html += '<ul style="margin:0 0 8px;padding-left:20px;">'
+                    in_list = True
+                text = re.sub(r'^[\-\*]\s', '', line)
+                text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+                body_html += f'<li style="margin-bottom:4px;font-size:14px;line-height:1.6;">{text}</li>'
+            else:
+                if in_list:
+                    body_html += '</ul>'
+                    in_list = False
+                text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', line)
+                body_html += f'<p style="margin:0 0 8px;font-size:14px;line-height:1.6;">{text}</p>'
+        if in_list:
+            body_html += '</ul>'
+
+        sections_html += f"""
+<div style="margin-bottom:28px;">
+  <h2 style="font-size:15px;font-weight:700;margin:0 0 10px;padding-bottom:8px;border-bottom:1px solid #f0f0f0;">{heading}</h2>
+  {body_html}
+</div>"""
+
+    return f"""<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background:#f9f9f9;">
+  <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:640px;margin:32px auto;padding:32px 28px;background:#fff;border-radius:8px;border:1px solid #e8e8e8;">
+    <div style="margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #111;">
+      <p style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#888;margin:0 0 8px;">Signal · AI Report</p>
+      <h1 style="font-size:20px;font-weight:700;margin:0;">{title}</h1>
+    </div>
+    {sections_html}
+    <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e8e8e8;font-size:12px;color:#aaa;">
+      Sent from Signal. Open the app to regenerate or share this report.
+    </div>
+  </div>
+</body></html>"""
