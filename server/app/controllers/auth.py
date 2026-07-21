@@ -23,7 +23,8 @@ oauth.register(
             "https://www.googleapis.com/auth/classroom.courses.readonly "
             "https://www.googleapis.com/auth/classroom.coursework.me.readonly "
             "https://www.googleapis.com/auth/classroom.student-submissions.students.readonly "
-            "https://www.googleapis.com/auth/drive.readonly"  # Needed to read Google Doc submission content
+            "https://www.googleapis.com/auth/drive.readonly "  # Needed to read Google Doc submission content
+            "https://www.googleapis.com/auth/gmail.send"  # Lets us send a report to the teacher's own inbox
         ),
         "access_type": "offline",  # Gives us a refresh token so we don't lose access when the access token expires
         "prompt": "consent",       # Forces Google to always return a refresh token

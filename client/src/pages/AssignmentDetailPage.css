@@ -398,6 +398,12 @@
   gap: 12px;
 }
 
+.report-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .report-timestamp {
   font-size: 0.8rem;
   color: var(--text);

@@ -54,6 +54,9 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
   const [loadingReport, setLoadingReport] = useState(!!importedRecord)
   const [generating, setGenerating] = useState(false)
   const [reportError, setReportError] = useState(null)
+  const [emailing, setEmailing] = useState(false)
+  const [emailError, setEmailError] = useState(null)
+  const [emailSuccess, setEmailSuccess] = useState(false)
 
   const [showEmailInput, setShowEmailInput] = useState(false)
   const [emailTo, setEmailTo] = useState('')
