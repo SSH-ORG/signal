@@ -83,6 +83,21 @@ export async function getReport(courseworkId) {
   return response.json()
 }
 
+// Sends the AI-generated report for an assignment to an email address via Resend
+export async function emailReport(courseworkId, toEmail) {
+  const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report/email`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to: toEmail }),
+  })
+  if (!response.ok) {
+    const err = await response.json()
+    throw new Error(err.detail || 'Failed to send email')
+  }
+  return response.json()
+}
+
 // Triggers the AI to generate a confusion report for an assignment
 // Sends all stored submissions to the AI and saves the response
 export async function generateReport(courseworkId) {

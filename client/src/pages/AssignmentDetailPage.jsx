@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getReport, generateReport, importCoursework, updateCourseworkContext, getGCRubric } from '../lib/api'
+import { getReport, generateReport, importCoursework, updateCourseworkContext, getGCRubric, emailReport } from '../lib/api'
 import Icon from '../components/Icon'
 import './Screens.css'
 import './AssignmentDetailPage.css'
@@ -55,6 +55,12 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
   const [generating, setGenerating] = useState(false)
   const [reportError, setReportError] = useState(null)
 
+  const [showEmailInput, setShowEmailInput] = useState(false)
+  const [emailTo, setEmailTo] = useState('')
+  const [sendingEmail, setSendingEmail] = useState(false)
+  const [emailSuccess, setEmailSuccess] = useState(false)
+  const [emailError, setEmailError] = useState(null)
+
   const courseworkId = record?.coursework_id
 
   // Load the existing report (if any) once the assignment has been imported
@@ -86,7 +92,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
     setSyncingSubmissions(true)
     setActionError(null)
     try {
-      const result = await importCoursework(assignment.google_coursework_id, assignment.course_id, combinedContext())
+      const result = await importCoursework(assignment.google_coursework_id, assignment.course_id, combinedContext(), assignment.course_name)
       if (!record) setLoadingReport(true) // first sync — the effect above is about to fetch the (nonexistent) report
       setRecord((prev) => ({
         coursework_id: result.coursework_id,
@@ -151,6 +157,22 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
       setReportError(err.message)
     } finally {
       setGenerating(false)
+    }
+  }
+
+  async function handleSendEmail(e) {
+    e.preventDefault()
+    setSendingEmail(true)
+    setEmailError(null)
+    setEmailSuccess(false)
+    try {
+      await emailReport(record.coursework_id, emailTo)
+      setEmailSuccess(true)
+      setShowEmailInput(false)
+    } catch (err) {
+      setEmailError(err.message)
+    } finally {
+      setSendingEmail(false)
     }
   }
 
@@ -338,10 +360,38 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                       month: 'long', day: 'numeric', year: 'numeric',
                     })}
                   </div>
-                  <button className="secondary-btn" onClick={handleGenerate} disabled={generating}>
-                    {generating ? 'Refreshing…' : 'Refresh Report'}
-                  </button>
+                  <div className="report-actions">
+                    <button className="secondary-btn" onClick={handleGenerate} disabled={generating}>
+                      {generating ? 'Refreshing…' : 'Refresh Report'}
+                    </button>
+                    <button
+                      className="secondary-btn"
+                      onClick={() => { setShowEmailInput(v => !v); setEmailSuccess(false); setEmailError(null) }}
+                    >
+                      Email Report
+                    </button>
+                  </div>
                 </div>
+
+                {showEmailInput && (
+                  <form className="email-form" onSubmit={handleSendEmail}>
+                    <input
+                      type="email"
+                      className="email-input"
+                      placeholder="Enter email address"
+                      value={emailTo}
+                      onChange={e => setEmailTo(e.target.value)}
+                      required
+                      autoFocus
+                    />
+                    <button type="submit" className="primary-btn" disabled={sendingEmail}>
+                      {sendingEmail ? 'Sending…' : 'Send'}
+                    </button>
+                  </form>
+                )}
+                {emailSuccess && <p className="save-success">Report sent!</p>}
+                {emailError && <p className="report-error">{emailError}</p>}
+
                 <ReportBody content={report.content} />
               </div>
             )}

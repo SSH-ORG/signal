@@ -403,6 +403,37 @@
   color: var(--text);
 }
 
+.report-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Inline email form that slides in below the report header */
+.email-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+  margin-bottom: 4px;
+}
+
+.email-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+
+.email-input:focus {
+  border-color: var(--accent);
+}
+
 .report-body {
   display: flex;
   flex-direction: column;
