@@ -116,7 +116,7 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
           <div className="account-toggle-row">
             <div>
               <p className="account-toggle-label">Allow email notifications</p>
-              <p className="detail-section-hint">Get emailed when a new confusion report is ready.</p>
+              <p className="detail-section-hint">Receive an email with a weekly summary of all your reports.</p>
             </div>
             <button
               type="button"

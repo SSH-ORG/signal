@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getReport, generateReport, importCoursework, updateCourseworkContext, getGCRubric } from '../lib/api'
+import { getReport, generateReport, emailReport, importCoursework, updateCourseworkContext, getGCRubric } from '../lib/api'
 import Icon from '../components/Icon'
 import './Screens.css'
 import './AssignmentDetailPage.css'
@@ -54,6 +54,9 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
   const [loadingReport, setLoadingReport] = useState(!!importedRecord)
   const [generating, setGenerating] = useState(false)
   const [reportError, setReportError] = useState(null)
+  const [emailing, setEmailing] = useState(false)
+  const [emailError, setEmailError] = useState(null)
+  const [emailSuccess, setEmailSuccess] = useState(false)
 
   const courseworkId = record?.coursework_id
 
@@ -151,6 +154,20 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
       setReportError(err.message)
     } finally {
       setGenerating(false)
+    }
+  }
+
+  async function handleEmailReport() {
+    setEmailing(true)
+    setEmailError(null)
+    setEmailSuccess(false)
+    try {
+      await emailReport(record.coursework_id)
+      setEmailSuccess(true)
+    } catch (err) {
+      setEmailError(err.message)
+    } finally {
+      setEmailing(false)
     }
   }
 
@@ -338,10 +355,17 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                       month: 'long', day: 'numeric', year: 'numeric',
                     })}
                   </div>
-                  <button className="secondary-btn" onClick={handleGenerate} disabled={generating}>
-                    {generating ? 'Refreshing…' : 'Refresh Report'}
-                  </button>
+                  <div className="report-actions">
+                    <button className="secondary-btn" onClick={handleGenerate} disabled={generating}>
+                      {generating ? 'Refreshing…' : 'Refresh Report'}
+                    </button>
+                    <button className="secondary-btn" onClick={handleEmailReport} disabled={emailing}>
+                      {emailing ? 'Sending…' : 'Email Report'}
+                    </button>
+                  </div>
                 </div>
+                {emailSuccess && <p className="save-success">Sent to your email</p>}
+                {emailError && <p className="report-error">{emailError}</p>}
                 <ReportBody content={report.content} />
               </div>
             )}

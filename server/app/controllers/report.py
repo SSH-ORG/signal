@@ -7,6 +7,7 @@ from sqlalchemy.sql import func
 from app.models.user import User
 from app.models.coursework import Coursework
 from app.models.report import Report
+from app.controllers import gmail as gmail_controller
 
 # Initialize the Groq client — free tier, no credit card required
 # Uses Llama 3.3 70B which is strong enough for educational text analysis
@@ -176,3 +177,25 @@ def get_report(coursework_id: int, user: User, db: Session) -> dict:
         "content": coursework.report.content,
         "created_at": coursework.report.created_at,
     }
+
+
+async def email_report(coursework_id: int, user: User, db: Session) -> dict:
+    # Emails the existing report for an assignment to the teacher's own address
+    coursework = db.query(Coursework).filter(
+        Coursework.coursework_id == coursework_id,
+        Coursework.user_id == user.user_id,
+    ).first()
+
+    if not coursework:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    if not coursework.report:
+        raise HTTPException(status_code=404, detail="No report made yet for this assignment")
+
+    if not user.email:
+        raise HTTPException(status_code=400, detail="No email address on file for your account")
+
+    html_body = gmail_controller.build_report_email_html(coursework.title, coursework.report.content)
+    await gmail_controller.send_email(user, db, subject=coursework.title, html_body=html_body)
+
+    return {"sent": True}

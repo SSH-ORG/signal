@@ -1,15 +1,33 @@
-import { useEffect, useState } from 'react'
-import { getAllReports } from '../lib/api'
+import { useEffect, useMemo, useState } from 'react'
+import { getAllReports, emailReport } from '../lib/api'
+import Icon from '../components/Icon'
 import './Screens.css'
 import './ReportsPage.css'
 
 // Global Reports page — reached via the sidebar Reports item
-// Lists all assignments that have a generated AI report across all courses
+// Lists all assignments that have a generated AI report, optionally filtered to one class
 // Clicking a report opens that assignment's detail page
-function ReportsPage({ onViewAssignment }) {
+function ReportsPage({ gcAssignments, onViewAssignment, onGoToAssignments, onGoToClasses }) {
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [classFilter, setClassFilter] = useState('all') // 'all' or a course_name
+
+  const [emailingId, setEmailingId] = useState(null)
+  const [emailFeedback, setEmailFeedback] = useState(null) // { coursework_id, message, isError }
+
+  async function handleEmailReport(courseworkId) {
+    setEmailingId(courseworkId)
+    setEmailFeedback(null)
+    try {
+      await emailReport(courseworkId)
+      setEmailFeedback({ coursework_id: courseworkId, message: 'Sent to your email', isError: false })
+    } catch (err) {
+      setEmailFeedback({ coursework_id: courseworkId, message: err.message, isError: true })
+    } finally {
+      setEmailingId(null)
+    }
+  }
 
   useEffect(() => {
     getAllReports()
@@ -18,29 +36,91 @@ function ReportsPage({ onViewAssignment }) {
       .finally(() => setLoading(false))
   }, [])
 
+  // Every class the teacher has — not just ones with reports — so picking a
+  // report-less class from the filter still shows a real empty state for it
+  const classes = useMemo(() => {
+    const seen = new Set()
+    return gcAssignments
+      .filter((a) => {
+        if (seen.has(a.course_id)) return false
+        seen.add(a.course_id)
+        return true
+      })
+      .map((a) => ({ course_id: a.course_id, course_name: a.course_name }))
+  }, [gcAssignments])
+
+  const filteredReports = classFilter === 'all'
+    ? reports
+    : reports.filter((r) => (r.course_name || 'Archived Class') === classFilter)
+
   // Group reports by course name — course_name is stored in DB at import time
   // so it's available even for archived courses
-  const grouped = reports.reduce((acc, report) => {
+  const grouped = filteredReports.reduce((acc, report) => {
     const courseName = report.course_name || 'Archived Class'
     if (!acc[courseName]) acc[courseName] = []
     acc[courseName].push(report)
     return acc
   }, {})
 
+  // Only known when a specific class (not "All Classes") is selected — lets the
+  // empty state link straight into that class's assignment list
+  const selectedClass = classes.find((c) => c.course_name === classFilter)
+
+  // Empty state copy + destination differ depending on whether a class is selected —
+  // the text stays plain either way, only the arrow icon next to it is clickable
+  const emptyState = selectedClass
+    ? {
+      text: 'No reports yet. Choose an assignment to get started.',
+      ariaLabel: `Go to ${selectedClass.course_name} assignments`,
+      onClick: () => onGoToAssignments(selectedClass.course_id, selectedClass.course_name),
+    }
+    : {
+      text: 'No reports yet. Choose a class to get started.',
+      ariaLabel: 'Go to classes',
+      onClick: onGoToClasses,
+    }
+
   return (
     <div className="screen">
       <main className="screen-main">
-        <div>
-          <h1 className="screen-title">Reports</h1>
-          <p className="screen-subtitle">All AI-generated confusion reports across your classes</p>
+        <div className="reports-header">
+          <div>
+            <h1 className="screen-title">Reports</h1>
+            <p className="screen-subtitle">
+              {classFilter === 'all' ? 'Reports across all classes' : `Reports across ${classFilter}`}
+            </p>
+          </div>
+
+          {classes.length > 0 && (
+            <label className="reports-filter">
+              Filter by class
+              <span className="reports-filter-select-wrap">
+                <select value={classFilter} onChange={(e) => setClassFilter(e.target.value)}>
+                  <option value="all">ALL</option>
+                  {classes.map((c) => (
+                    <option key={c.course_id} value={c.course_name}>{c.course_name}</option>
+                  ))}
+                </select>
+                <Icon name="expand_more" className="reports-filter-chevron" />
+              </span>
+            </label>
+          )}
         </div>
 
         {loading && <p className="screen-status">Loading reports…</p>}
         {error && <p className="screen-status screen-status--error">{error}</p>}
 
-        {!loading && !error && reports.length === 0 && (
+        {!loading && !error && filteredReports.length === 0 && (
           <p className="screen-status">
-            No reports generated yet. Import an assignment and click Generate AI Report to get started.
+            {emptyState.text}
+            <button
+              type="button"
+              className="reports-empty-icon-btn"
+              aria-label={emptyState.ariaLabel}
+              onClick={emptyState.onClick}
+            >
+              <Icon name="arrow_forward" />
+            </button>
           </p>
         )}
 
@@ -50,20 +130,37 @@ function ReportsPage({ onViewAssignment }) {
             <ul className="item-list">
               {courseReports.map((report) => (
                 <li key={report.report_id}>
-                  <button
-                    className="item-card"
-                    onClick={() => onViewAssignment(report.coursework_id)}
-                  >
-                    <div className="item-info">
-                      <span className="item-name">{report.title}</span>
-                      <span className="item-meta">
-                        Generated {new Date(report.created_at).toLocaleDateString('en-US', {
-                          month: 'short', day: 'numeric', year: 'numeric',
-                        })}
-                      </span>
-                    </div>
-                    <span className="chevron">›</span>
-                  </button>
+                  <div className="item-card reports-item-card">
+                    <button
+                      type="button"
+                      className="reports-item-main"
+                      onClick={() => onViewAssignment(report.coursework_id)}
+                    >
+                      <div className="item-info">
+                        <span className="item-name">{report.title}</span>
+                        <span className="item-meta">
+                          Generated {new Date(report.created_at).toLocaleDateString('en-US', {
+                            month: 'short', day: 'numeric', year: 'numeric',
+                          })}
+                        </span>
+                      </div>
+                      <span className="chevron">›</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="reports-email-btn"
+                      aria-label={`Email ${report.title} report`}
+                      onClick={() => handleEmailReport(report.coursework_id)}
+                      disabled={emailingId === report.coursework_id}
+                    >
+                      <Icon name="mail" />
+                    </button>
+                  </div>
+                  {emailFeedback?.coursework_id === report.coursework_id && (
+                    <p className={`reports-email-status${emailFeedback.isError ? ' reports-email-status--error' : ''}`}>
+                      {emailFeedback.message}
+                    </p>
+                  )}
                 </li>
               ))}
             </ul>
