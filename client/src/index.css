@@ -44,6 +44,38 @@
   }
 }
 
+/* Manual dark override — set by the user in Account settings */
+[data-theme="dark"] {
+  --text: #9ca3af;
+  --text-h: #f3f4f6;
+  --bg: #16171d;
+  --surface: #1c1d24;
+  --border: #2e303a;
+  --accent: #c084fc;
+  --accent-bg: rgba(192, 132, 252, 0.15);
+  --accent-border: rgba(192, 132, 252, 0.5);
+  --error: #f87171;
+  --shadow:
+    rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+  color-scheme: dark;
+}
+
+/* Manual light override — forces light even on a device set to system dark */
+[data-theme="light"] {
+  --text: #6b6375;
+  --text-h: #08060d;
+  --bg: #fff;
+  --surface: #fff;
+  --border: #e5e4e7;
+  --accent: #aa3bff;
+  --accent-bg: rgba(170, 59, 255, 0.1);
+  --accent-border: rgba(170, 59, 255, 0.5);
+  --error: #e5484d;
+  --shadow:
+    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  color-scheme: light;
+}
+
 * {
   box-sizing: border-box;
 }
