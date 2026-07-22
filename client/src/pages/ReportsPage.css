@@ -197,3 +197,132 @@
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
 }
+
+/* Card bottom border removed when expanded so it connects visually to the panel */
+.reports-item-card--expanded {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-color: transparent;
+}
+
+/* Inline report panel — sits directly under the expanded card */
+.reports-expanded {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Footer inside expanded panel — just the "Open Assignment" button */
+.reports-expanded-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* Flagged student count badge shown inline in the report meta line */
+.reports-flagged-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #c0392b;
+  background: #fff0f0;
+  border: 1px solid #fcc;
+  border-radius: 100px;
+  padding: 1px 7px;
+  vertical-align: middle;
+}
+
+/* ── Individual reports section inside the expanded panel ── */
+
+.reports-individual-section {
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.reports-individual-heading {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-h);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* "N / total" count next to the heading */
+.reports-individual-count {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 1px 8px;
+}
+
+.reports-individual-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reports-individual-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--card-bg, var(--surface));
+}
+
+.reports-individual-card--flagged {
+  border-left: 3px solid var(--error, #d93025);
+}
+
+.reports-individual-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.reports-individual-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.reports-individual-empty {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+/* Inline link-style button for "Open assignment to generate →" */
+.reports-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.reports-link-btn:hover {
+  opacity: 0.8;
+}

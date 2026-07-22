@@ -53,3 +53,26 @@ def delete_report(
     db: Session = Depends(get_db),
 ):
     return report_controller.delete_report(coursework_id, user, db)
+
+
+# GET /api/coursework/{coursework_id}/report/submissions
+# Lists all submissions for an assignment with their individual AI reports (if generated)
+@router.get("/submissions")
+def list_submissions(
+    coursework_id: int,
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    return report_controller.get_submissions_list(coursework_id, user, db)
+
+
+# POST /api/coursework/{coursework_id}/report/submissions/{submission_id}
+# Generates an individual AI report focused on one student's submission
+@router.post("/submissions/{submission_id}")
+def generate_individual(
+    coursework_id: int,
+    submission_id: int,
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    return report_controller.generate_individual_report(coursework_id, submission_id, user, db)

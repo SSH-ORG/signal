@@ -391,6 +391,110 @@
   gap: 20px;
 }
 
+/* Classwide / Individual toggle */
+.report-mode-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: fit-content;
+  margin-bottom: 20px;
+}
+
+.report-mode-btn {
+  padding: 6px 18px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.report-mode-btn--active {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Individual submission cards */
+.individual-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.individual-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  background: var(--surface);
+}
+
+.individual-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.individual-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text);
+}
+
+.individual-preview {
+  font-size: 0.875rem;
+  color: var(--text);
+  line-height: 1.5;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  white-space: pre-wrap;
+}
+
+.individual-report-body {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* Top bar: Generate All button + flagged summary count */
+.individual-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Red left border on cards where the AI detected an issue */
+.individual-card--flagged {
+  border-left: 3px solid var(--error, #d93025);
+}
+
+/* Counts how many students are flagged across the class */
+.flag-summary-badge {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--error, #d93025);
+  background: #fff0f0;
+  border: 1px solid #fdd;
+  border-radius: 100px;
+  padding: 3px 10px;
+}
+
+/* .flag-badge and modifier classes moved to Screens.css (shared) */
+
 .report-header {
   display: flex;
   align-items: center;
@@ -409,43 +513,4 @@
   color: var(--text);
 }
 
-.report-body {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.report-section {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.section-heading {
-  margin: 0;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--accent);
-}
-
-.section-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.section-body p {
-  margin: 0;
-  font-size: 0.9rem;
-  color: var(--text-h);
-  line-height: 1.65;
-}
-
-.section-body strong {
-  color: var(--text-h);
-  font-weight: 600;
-}
+/* .report-body and related classes moved to components/ReportBody.css */

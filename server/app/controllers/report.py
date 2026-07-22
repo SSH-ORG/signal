@@ -8,6 +8,7 @@ from sqlalchemy.sql import func
 
 from app.models.user import User
 from app.models.coursework import Coursework
+from app.models.submission import Submission
 from app.models.report import Report
 
 RESEND_API_URL = "https://api.resend.com/emails"
@@ -31,80 +32,109 @@ def generate_report(coursework_id: int, user: User, db: Session) -> dict:
     if not coursework.submissions:
         raise HTTPException(status_code=400, detail="No submissions found for this assignment")
 
-    # Build the list of student submissions to send to the AI
+    # Format submissions — use real student names when available, number fallback otherwise
     submissions_text = "\n\n".join([
-        f"Student {i + 1}:\n{sub.content}"
+        f"Student: {sub.student_name or f'Student {i + 1}'}\nSubmission: {sub.content}"
         for i, sub in enumerate(coursework.submissions)
     ])
 
-    # Detect whether the teacher's context contains a rubric so we can
-    # switch the AI into criterion-by-criterion evaluation mode
     has_rubric = bool(coursework.context and "Rubric:" in coursework.context)
+    context_str = coursework.context if coursework.context else "No context provided — analyze submissions based on content only."
 
-    context_section = (
-        f"\nContext provided by the teacher:\n{coursework.context}\n"
-        if coursework.context
-        else ""
+    # Grade section only appears when a rubric was actually provided
+    grade_section = """## 📝 Submission Grades
+- **[Student Name]** — [Grade based on rubric] — [one sentence justification]
+
+---
+
+""" if has_rubric else ""
+
+    rubric_rule = (
+        "- Rubric exists: include the Submission Grades section for every student"
+        if has_rubric
+        else "- No rubric provided: skip the Submission Grades section entirely — do not mention grading at all"
     )
 
-    if has_rubric:
-        # Rubric-aware prompt — forces the AI to evaluate every submission
-        # against every criterion and report only what is actually in the text
-        prompt = f"""You are a strict educational analyst reviewing student submissions for a teacher.
-Your job is to evaluate submissions against the rubric provided and report exactly what you find — correct responses, incorrect responses, and missing understanding. Do not generalize or invent patterns that are not directly supported by the submission text.
+    prompt = f"""You are an expert educator analyzing student submissions for a virtual classroom.
 
-Assignment: {coursework.title}
-{context_section}
-Student Submissions:
+REPORT MODE: Generate a CLASS-WIDE report covering all submissions.
+
+ASSIGNMENT: {coursework.title}
+
+CONTEXT:
+{context_str}
+
+STUDENT SUBMISSIONS:
 {submissions_text}
 
-Using the rubric above, analyze the submissions and generate a report with exactly three sections using ## markdown headings, in this exact order:
+---
 
-## Rubric Breakdown
-For each criterion in the rubric:
-- State the criterion name
-- Describe what a correct response looks like based on the rubric
-- Describe what students actually wrote — specifically identify what was correct, what was incorrect or incomplete, and what was missing entirely
-- If most students got something wrong, quote or closely paraphrase the specific error from the submissions
-Do not refer to students by number or any identifier. Describe class-wide patterns only, grounded in what was actually written.
+CLASS-WIDE REPORT FORMAT — follow exactly:
 
-## Incorrect or Incomplete Responses
-Identify the most common ways students answered incorrectly or incompletely. For each error type:
-- Describe the specific mistake (what they wrote or failed to address)
-- Explain why it is incorrect based on the assignment or rubric
-- Estimate how widespread it is (e.g. "most students", "roughly half", "a few students")
+## 📊 Class Overview
+- Total submissions reviewed: [number]
+- Submissions flagged as insufficient: [number]
+- Students showing strong understanding: [number]
+- Students flagged for intervention: [number]
 
-## Next Steps
-Give 2 to 4 direct, actionable steps the teacher should take in the next class. Each step must be tied to a specific error or gap you identified above. Be concrete — name the concept or criterion that needs to be revisited.
+---
 
-Be precise. Only report what is supported by the actual submission content. Do not pad with general observations."""
+## ⚠️ Insufficient Submissions
+List any submissions that were blank, too short (under 15 words), off-topic, or clearly not a real attempt.
 
-    else:
-        # No rubric — evaluate correctness based on the assignment itself
-        prompt = f"""You are a strict educational analyst reviewing student submissions for a teacher.
-Your job is to evaluate whether students answered the assignment correctly and report exactly what you find. Do not generalize or invent patterns — every claim you make must be directly supported by what students actually wrote.
+Format each as:
+- **[Student Name]** — [one sentence reason: blank / off-topic / too short]
 
-Assignment: {coursework.title}
-{context_section}
-Student Submissions:
-{submissions_text}
+If none, write: None detected.
 
-Analyze the submissions and generate a report with exactly three sections using ## markdown headings, in this exact order:
+---
 
-## What Students Got Right
-Describe what students answered correctly based on the assignment. Be specific — reference the actual content of the submissions. If no students answered correctly, say so directly.
+## ❌ Flagged Students
+Group students who share the same misconception together.
 
-## What Students Got Wrong or Missed
-Identify every type of incorrect or incomplete response across the submissions:
-- Describe the specific mistake or gap (what they wrote or failed to address)
-- Explain why it is incorrect or insufficient based on the assignment
-- Estimate how widespread each error is (e.g. "most students", "roughly half", "a few students")
-If a submission is completely off-topic or does not answer the assignment, state that clearly.
+**Misconception:** [describe the specific wrong idea in one sentence]
+- **[Student Name]** — [one sentence summary of what their submission showed]
 
-## Next Steps
-Give 2 to 4 direct, specific actions the teacher should take in the next class. Each action must address a specific error or gap you identified above. Name the concept that needs to be retaught or clarified.
+If no students are flagged, write: All students demonstrated understanding.
 
-Be precise and direct. Only report what is supported by the actual submission content. Do not pad with general educational observations."""
+---
+
+## ✅ Strong Submissions
+- **[Student Name]** — [one sentence on what they did well]
+
+---
+
+{grade_section}## 📌 Common Misconceptions
+Summarize the 2–3 most common misconceptions detected across the class.
+
+- **[Misconception]:** [one sentence explanation of the correct understanding]
+
+If none, write: No common misconceptions detected.
+
+---
+
+## 💡 Recommended Next Steps
+2–3 specific actionable things for the teacher to do next class based on what you saw.
+
+- [Specific action]
+- [Specific action]
+
+---
+
+EDGE CASE RULES — follow strictly no matter what:
+- Blank submission → flag as insufficient, do not analyze
+- Under 15 words → flag as insufficient unless it directly and correctly answers the question
+- Off-topic or gibberish → flag as insufficient
+- If ALL submissions are blank → only output Overview and Insufficient Submissions, then write: "Unable to generate report — no valid submissions found."
+- If ALL submissions show strong understanding → say so clearly, do not invent misconceptions
+- If only 1 student is struggling → do not call it a "common" misconception
+- Never make up student names or invent submissions
+- Never give generic feedback — always tie it to actual submission content
+- If no context provided → still analyze but note it at the top of the report
+{rubric_rule}
+- Never grade without a rubric — do not invent grading criteria
+- If rubric exists but submission is blank → grade as: 0 / No submission
+- Do not use long paragraphs anywhere — keep everything scannable and concise"""
 
     # Send the prompt to Groq (Llama 3.3 70B) and get the report back
     # temperature=0.3 keeps responses focused and grounded — less creative drift
@@ -140,6 +170,26 @@ Be precise and direct. Only report what is supported by the actual submission co
     }
 
 
+def _is_flagged(individual_report: str) -> bool:
+    # Supports both the old prompt format and the new one so existing reports aren't re-flagged incorrectly.
+    # Old format used explicit labels; new format uses section content to signal issues.
+
+    # Old prompt format signals
+    if any(term in individual_report for term in [
+        "Misconception present", "Partial understanding", "No engagement"
+    ]):
+        return True
+    # New prompt format — submission quality issues
+    if any(term in individual_report for term in [
+        "Submission was blank", "Submission too short", "Submission did not address"
+    ]):
+        return True
+    # New prompt format — misconceptions section exists and is not cleared
+    if "Misconceptions Detected" in individual_report and "No misconceptions detected" not in individual_report:
+        return True
+    return False
+
+
 def get_all_reports(user: User, db: Session) -> list:
     # Returns all assignments that have a generated report for this teacher
     # Used by the global Reports page in the sidebar
@@ -155,6 +205,11 @@ def get_all_reports(user: User, db: Session) -> list:
             "course_name": cw.course_name or "",  # Stored at import time so it's available even for archived courses
             "report_id": cw.report.report_id,
             "created_at": cw.report.created_at,
+            # Count of students whose individual report shows less than full understanding
+            "flagged_count": sum(
+                1 for s in cw.submissions
+                if s.individual_report and _is_flagged(s.individual_report)
+            ),
         }
         for cw in coursework_list
         if cw.report
@@ -297,3 +352,145 @@ def _report_to_html(title: str, content: str) -> str:
     </div>
   </div>
 </body></html>"""
+
+
+def get_submissions_list(coursework_id: int, user: User, db: Session) -> list:
+    # Returns all submissions for an assignment, including any individual AI reports
+    # Used to populate the Individual tab on the Assignment Detail page
+    coursework = db.query(Coursework).filter(
+        Coursework.coursework_id == coursework_id,
+        Coursework.user_id == user.user_id,
+    ).first()
+
+    if not coursework:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    return [
+        {
+            "submission_id": s.submission_id,
+            "student_name": s.student_name,
+            "content": s.content,
+            "individual_report": s.individual_report,
+        }
+        for s in coursework.submissions
+    ]
+
+
+def generate_individual_report(coursework_id: int, submission_id: int, user: User, db: Session) -> dict:
+    # Generates an AI report focused on a single student's submission
+    # Evaluates what they got right/wrong and gives a specific recommendation for that student
+    coursework = db.query(Coursework).filter(
+        Coursework.coursework_id == coursework_id,
+        Coursework.user_id == user.user_id,
+    ).first()
+
+    if not coursework:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    submission = db.query(Submission).filter(
+        Submission.submission_id == submission_id,
+        Submission.coursework_id == coursework_id,
+    ).first()
+
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    student_label = submission.student_name or f"Student {submission.submission_id}"
+    has_rubric = bool(coursework.context and "Rubric:" in coursework.context)
+    context_str = coursework.context if coursework.context else "No context provided — analyze submission based on content only."
+
+    # Grade section only appears when a rubric was actually provided
+    grade_section = """## 📝 Grade
+**Grade:** [Score based on rubric]
+**Justification:** [2–3 sentences explaining the grade based on rubric criteria]
+
+---
+
+""" if has_rubric else ""
+
+    rubric_rule = (
+        "- Rubric exists: include the Grade section"
+        if has_rubric
+        else "- No rubric provided: skip the Grade section entirely — do not mention grading at all"
+    )
+
+    prompt = f"""You are an expert educator analyzing a single student's submission for a teacher.
+
+REPORT MODE: Generate an INDIVIDUAL report for {student_label} only.
+
+ASSIGNMENT: {coursework.title}
+
+CONTEXT:
+{context_str}
+
+STUDENT SUBMISSION:
+Student: {student_label}
+Submission: {submission.content}
+
+---
+
+INDIVIDUAL REPORT FORMAT — follow exactly:
+
+## 👤 Student: {student_label}
+
+## 📋 Submission Summary
+One paragraph summarizing what the student submitted and whether they addressed the question.
+
+---
+
+## ✅ What They Got Right
+- [Specific thing done well]
+
+If nothing correct, write: No correct understanding demonstrated.
+
+---
+
+## ❌ Misconceptions Detected
+- **[Misconception]:** [one sentence on what they got wrong and what the correct understanding is]
+
+If none, write: No misconceptions detected.
+
+---
+
+## ⚠️ Submission Quality
+Flag any issues with the submission itself:
+- Blank → "Submission was blank — no analysis possible"
+- Too short → "Submission too short to assess properly"
+- Off topic → "Submission did not address the assignment"
+- Copied/AI generated → "Submission shows signs of not being original work"
+
+If no issues, write: Submission quality is acceptable.
+
+---
+
+{grade_section}## 💡 Recommended Next Steps
+2–3 specific things the teacher should do to support this specific student.
+
+- [Specific action tailored to this student]
+- [Specific action tailored to this student]
+
+---
+
+EDGE CASE RULES — follow strictly:
+- Blank submission → write "Submission was blank — no analysis possible" in Submission Quality, skip all other analysis
+- Under 15 words → flag as insufficient unless it directly and correctly answers the question
+- Off-topic or gibberish → flag as insufficient
+- Never make up content or invent what the student wrote
+- Never give generic feedback — tie everything to what was actually in the submission
+{rubric_rule}
+- Never grade without a rubric
+- Do not use long paragraphs anywhere — keep everything scannable and concise"""
+
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+    )
+
+    submission.individual_report = response.choices[0].message.content
+    db.commit()
+
+    return {
+        "submission_id": submission.submission_id,
+        "individual_report": submission.individual_report,
+    }
