@@ -28,7 +28,7 @@ function HelpPage() {
           <div className="help-step">
             <div className="help-step-number">2</div>
             <div className="help-step-body">
-              <h2 className="help-step-title">Choose and sync an assignment</h2>
+              <h2 className="help-step-title">Sync an assignment</h2>
               <p className="help-step-text">
                 After choosing an assignment, click the sync icon next to the submission count.
                 The first click syncs the assignment itself into Signal; clicking it again pulls

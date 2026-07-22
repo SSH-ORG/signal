@@ -109,13 +109,13 @@ function ReportsPage({ gcAssignments, onViewAssignment, onGoToAssignments, onGoT
           <div>
             <h1 className="screen-title">Reports</h1>
             <p className="screen-subtitle">
-              {classFilter === 'all' ? 'Reports across all classes' : `Reports across ${classFilter}`}
+              {classFilter === 'all' ? 'reports across all classes' : `reports across ${classFilter}`}
             </p>
           </div>
 
           <div className="reports-filters">
             <label className="reports-filter">
-              Time
+              time
               <span className="reports-filter-select-wrap">
                 <select value={timeFilter} onChange={(e) => setTimeFilter(e.target.value)}>
                   <option value="all">All time</option>
@@ -128,7 +128,7 @@ function ReportsPage({ gcAssignments, onViewAssignment, onGoToAssignments, onGoT
 
             {classes.length > 0 && (
               <label className="reports-filter">
-                Class
+                class
                 <span className="reports-filter-select-wrap">
                   <select value={classFilter} onChange={(e) => setClassFilter(e.target.value)}>
                     <option value="all">All classes</option>

@@ -25,7 +25,7 @@ function CoursesPage({ gcAssignments, loading, error, onSelectCourse }) {
       <main className="screen-main screen-main--wide">
         <div>
           <h1 className="screen-title">Classes</h1>
-          <p className="screen-subtitle">Choose a course to see its contents</p>
+          <p className="screen-subtitle">choose a course</p>
         </div>
 
         {loading && <p className="screen-status">Loading your classes…</p>}

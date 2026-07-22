@@ -278,7 +278,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                     className="context-textarea context-textarea--small"
                     value={descriptionText}
                     onChange={(e) => { setDescriptionText(e.target.value); setSaveSuccess(false) }}
-                    placeholder="No description found in Google Classroom."
+                    placeholder="No description found in Google Classroom, you can add one here."
                     rows={3}
                   />
                 </div>
@@ -302,7 +302,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                     className="context-textarea context-textarea--small"
                     value={rubricText}
                     onChange={(e) => { setRubricText(e.target.value); setSaveSuccess(false) }}
-                    placeholder="No rubric yet — sync to pull one in from Google Classroom, or type one here."
+                    placeholder="No rubric yet. Sync Rubric from Google Classroom, or type one here."
                     rows={3}
                   />
                   <button
