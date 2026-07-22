@@ -89,7 +89,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
     setSyncingSubmissions(true)
     setActionError(null)
     try {
-      const result = await importCoursework(assignment.google_coursework_id, assignment.course_id, combinedContext())
+      const result = await importCoursework(assignment.google_coursework_id, assignment.course_id, combinedContext(), assignment.course_name)
       if (!record) setLoadingReport(true) // first sync — the effect above is about to fetch the (nonexistent) report
       setRecord((prev) => ({
         coursework_id: result.coursework_id,
@@ -243,8 +243,8 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
               <div className="context-column">
                 <h3 className="context-group-label">Mental Model</h3>
                 <p className="detail-section-hint">
-                  What should students understand after this assignment? This is what the AI
-                  compares submissions against.
+                  What does student understanding look like? This is what the AI compares
+                  submissions against.
                 </p>
                 <textarea
                   className="context-textarea"
@@ -278,7 +278,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                     className="context-textarea context-textarea--small"
                     value={descriptionText}
                     onChange={(e) => { setDescriptionText(e.target.value); setSaveSuccess(false) }}
-                    placeholder="No description found in Google Classroom."
+                    placeholder="No description found in Google Classroom, add one here."
                     rows={3}
                   />
                 </div>
@@ -302,7 +302,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                     className="context-textarea context-textarea--small"
                     value={rubricText}
                     onChange={(e) => { setRubricText(e.target.value); setSaveSuccess(false) }}
-                    placeholder="No rubric yet — sync to pull one in from Google Classroom, or type one here."
+                    placeholder="No rubric yet. Sync Rubric from Google Classroom, or add one here."
                     rows={3}
                   />
                   <button
@@ -339,10 +339,10 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
             {!loadingReport && !report && !reportError && (
               <div className="report-empty">
                 <p className="report-empty-text">
-                  No report generated yet. Click below to analyze all submissions with AI.
+                  No report built yet.
                 </p>
                 <button className="generate-btn" onClick={handleGenerate} disabled={generating}>
-                  {generating ? 'Generating report…' : 'Generate AI Report'}
+                  {generating ? 'Building…' : 'Build'}
                 </button>
               </div>
             )}

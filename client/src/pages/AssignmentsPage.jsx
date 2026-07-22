@@ -23,7 +23,7 @@ function AssignmentsPage({ courseId, gcAssignments, imported, onBack, onSelectAs
         </div>
         <div>
           <h1 className="screen-title">Coursework</h1>
-          <p className="screen-subtitle">Choose an assignment to run a report</p>
+          <p className="screen-subtitle">choose an assignment to build a report</p>
         </div>
 
         {assignments.length === 0 ? (

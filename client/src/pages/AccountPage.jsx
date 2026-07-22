@@ -73,7 +73,7 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
       <main className="screen-main">
         <div>
           <h1 className="screen-title">Account</h1>
-          <p className="screen-subtitle">Manage your profile and preferences</p>
+          <p className="screen-subtitle">manage your profile and preferences</p>
         </div>
 
         <section className="detail-section">

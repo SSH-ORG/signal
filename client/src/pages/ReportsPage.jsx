@@ -109,7 +109,8 @@ function ReportsPage({ gcAssignments, onViewAssignment, onGoToAssignments, onGoT
           <div>
             <h1 className="screen-title">Reports</h1>
             <p className="screen-subtitle">
-              {classFilter === 'all' ? 'Reports across all classes' : `Reports across ${classFilter}`}
+              {classFilter === 'all' ? 'reports across all classes' : `reports across ${classFilter}`}
+              {timeFilter !== 'all' && ` from the last ${timeFilter === '7days' ? '7' : '30'} days`}
             </p>
           </div>
 
@@ -118,7 +119,7 @@ function ReportsPage({ gcAssignments, onViewAssignment, onGoToAssignments, onGoT
               Time
               <span className="reports-filter-select-wrap">
                 <select value={timeFilter} onChange={(e) => setTimeFilter(e.target.value)}>
-                  <option value="all">All time</option>
+                  <option value="all">ALL</option>
                   <option value="7days">Last 7 days</option>
                   <option value="30days">Last 30 days</option>
                 </select>
@@ -131,7 +132,7 @@ function ReportsPage({ gcAssignments, onViewAssignment, onGoToAssignments, onGoT
                 Class
                 <span className="reports-filter-select-wrap">
                   <select value={classFilter} onChange={(e) => setClassFilter(e.target.value)}>
-                    <option value="all">All classes</option>
+                    <option value="all">ALL</option>
                     {classes.map((c) => (
                       <option key={c.course_id} value={c.course_name}>{c.course_name}</option>
                     ))}
@@ -175,7 +176,7 @@ function ReportsPage({ gcAssignments, onViewAssignment, onGoToAssignments, onGoT
                       <div className="item-info">
                         <span className="item-name">{report.title}</span>
                         <span className="item-meta">
-                          Generated {new Date(report.created_at).toLocaleDateString('en-US', {
+                          Built {new Date(report.created_at).toLocaleDateString('en-US', {
                             month: 'short', day: 'numeric', year: 'numeric',
                           })}
                         </span>

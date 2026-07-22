@@ -216,6 +216,26 @@ async def fetch_google_coursework(user: User, db: Session) -> list:
                     "course_name": course.get("name", ""),  # Which class this assignment belongs to
                 })
 
+    # Reconcile stored course_name against live Classroom data on every load — covers
+    # rows whose course_name was never saved correctly (e.g. a past import bug) or
+    # whose class was renamed since import. Only touches rows still in the live list,
+    # so classes that are actually archived keep their last-known name instead of
+    # being overwritten.
+    live_names = {cw["google_coursework_id"]: cw["course_name"] for cw in all_coursework}
+    if live_names:
+        stored = db.query(Coursework).filter(
+            Coursework.user_id == user.user_id,
+            Coursework.google_coursework_id.in_(live_names.keys()),
+        ).all()
+        changed = False
+        for row in stored:
+            live_name = live_names[row.google_coursework_id]
+            if live_name and row.course_name != live_name:
+                row.course_name = live_name
+                changed = True
+        if changed:
+            db.commit()
+
     return all_coursework
 
 
@@ -241,6 +261,12 @@ async def import_google_coursework(
             # Assignment already exists — skip creating it, just sync new submissions below
             # Context is never touched here — use PATCH /api/coursework/{id} to edit it
             coursework = existing
+            # Backfills course_name for rows created before it was passed in (e.g. the
+            # frontend bug that dropped it on sync) — only overwrites when a real name
+            # comes in, so rows for classes archived since import keep their last-known name
+            if course_name and coursework.course_name != course_name:
+                coursework.course_name = course_name
+                db.commit()
         else:
             # First time importing — fetch assignment details and create a record
             cw_resp = await _get_with_refresh(
