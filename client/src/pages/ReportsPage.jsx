@@ -175,7 +175,7 @@ function ReportsPage({ gcAssignments, onViewAssignment, onGoToAssignments, onGoT
                       <div className="item-info">
                         <span className="item-name">{report.title}</span>
                         <span className="item-meta">
-                          Generated {new Date(report.created_at).toLocaleDateString('en-US', {
+                          Built {new Date(report.created_at).toLocaleDateString('en-US', {
                             month: 'short', day: 'numeric', year: 'numeric',
                           })}
                         </span>

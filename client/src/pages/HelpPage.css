@@ -1,7 +1,7 @@
 .help-steps {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 16px;
 }
 
 .help-step {
@@ -67,6 +67,9 @@
 
 /* Tip box at the bottom */
 .help-tip {
+  align-self: center;
+  max-width: 480px;
+  width: 100%;
   padding: 16px 20px;
   background: var(--accent-bg);
   border: 1px solid var(--accent-border);

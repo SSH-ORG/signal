@@ -182,7 +182,6 @@ function App() {
     page = (
       <CoursesPage
         gcAssignments={gcAssignments}
-        imported={imported}
         loading={dataLoading}
         error={dataError}
         onSelectCourse={handleSelectCourse}

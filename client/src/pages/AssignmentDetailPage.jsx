@@ -89,7 +89,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
     setSyncingSubmissions(true)
     setActionError(null)
     try {
-      const result = await importCoursework(assignment.google_coursework_id, assignment.course_id, combinedContext())
+      const result = await importCoursework(assignment.google_coursework_id, assignment.course_id, combinedContext(), assignment.course_name)
       if (!record) setLoadingReport(true) // first sync — the effect above is about to fetch the (nonexistent) report
       setRecord((prev) => ({
         coursework_id: result.coursework_id,
@@ -243,8 +243,8 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
               <div className="context-column">
                 <h3 className="context-group-label">Mental Model</h3>
                 <p className="detail-section-hint">
-                  What should students understand after this assignment? This is what the AI
-                  compares submissions against.
+                  What does student understanding look like? This is what the AI compares
+                  submissions against.
                 </p>
                 <textarea
                   className="context-textarea"
@@ -339,10 +339,10 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
             {!loadingReport && !report && !reportError && (
               <div className="report-empty">
                 <p className="report-empty-text">
-                  No report generated yet. Click below to analyze all submissions with AI.
+                  No report built yet. Click below to build one.
                 </p>
                 <button className="generate-btn" onClick={handleGenerate} disabled={generating}>
-                  {generating ? 'Generating report…' : 'Generate AI Report'}
+                  {generating ? 'Building…' : 'Build'}
                 </button>
               </div>
             )}
