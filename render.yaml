@@ -10,7 +10,7 @@ services:
     name: signal-server
     env: python
     rootDir: server
-    plan: free
+    plan: starter
     buildCommand: "pip install -r requirements.txt && alembic upgrade head"
     startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     envVars:
@@ -43,7 +43,6 @@ services:
     name: signal-client
     env: static
     rootDir: client
-    plan: free
     buildCommand: "npm install && npm run build"
     staticPublishPath: dist
     envVars:
