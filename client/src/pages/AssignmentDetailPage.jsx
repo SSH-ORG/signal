@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getReport, generateReport, emailReport, importCoursework, updateCourseworkContext, getGCRubric } from '../lib/api'
+import { getReport, generateReport, emailReport, importCoursework, updateCourseworkContext, getGCRubric, getSubmissions, generateIndividualReport } from '../lib/api'
 import Icon from '../components/Icon'
 import './Screens.css'
 import './AssignmentDetailPage.css'
@@ -58,9 +58,14 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
   const [emailError, setEmailError] = useState(null)
   const [emailSuccess, setEmailSuccess] = useState(false)
 
+  // Individual report state — 'classwide' | 'individual'
+  const [reportMode, setReportMode] = useState('classwide')
+  const [submissions, setSubmissions] = useState([])
+  const [generatingIndividual, setGeneratingIndividual] = useState(null) // submission_id being generated
+
   const courseworkId = record?.coursework_id
 
-  // Load the existing report (if any) once the assignment has been imported
+  // Load the existing classwide report (if any) once the assignment has been imported
   useEffect(() => {
     if (!courseworkId) return
     getReport(courseworkId)
@@ -68,6 +73,12 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
       .catch(() => setReportError('Failed to load report.'))
       .finally(() => setLoadingReport(false))
   }, [courseworkId])
+
+  // Load submissions (with any individual reports) when switching to Individual mode
+  useEffect(() => {
+    if (!courseworkId || reportMode !== 'individual') return
+    getSubmissions(courseworkId).then(setSubmissions).catch(() => {})
+  }, [courseworkId, reportMode])
 
   // Mental model, description, and rubric are edited separately but combined
   // into one labeled string for the AI — the report only reads a single context
@@ -168,6 +179,24 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
       setEmailError(err.message)
     } finally {
       setEmailing(false)
+    }
+  }
+
+  async function handleGenerateIndividual(submissionId) {
+    setGeneratingIndividual(submissionId)
+    try {
+      const result = await generateIndividualReport(record.coursework_id, submissionId)
+      setSubmissions((prev) =>
+        prev.map((s) =>
+          s.submission_id === submissionId
+            ? { ...s, individual_report: result.individual_report }
+            : s
+        )
+      )
+    } catch (err) {
+      // Error shown inline per submission
+    } finally {
+      setGeneratingIndividual(null)
     }
   }
 
@@ -334,43 +363,102 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
         {/* AI report — its own tab, only reachable once the assignment has been synced */}
         {record && activeTab === 'report' && (
           <section className="detail-section">
-            {loadingReport && <p className="report-status">Loading…</p>}
+            {/* Classwide vs Individual mode toggle */}
+            <div className="report-mode-toggle">
+              <button
+                type="button"
+                className={`report-mode-btn${reportMode === 'classwide' ? ' report-mode-btn--active' : ''}`}
+                onClick={() => setReportMode('classwide')}
+              >
+                Classwide
+              </button>
+              <button
+                type="button"
+                className={`report-mode-btn${reportMode === 'individual' ? ' report-mode-btn--active' : ''}`}
+                onClick={() => setReportMode('individual')}
+              >
+                Individual
+              </button>
+            </div>
 
-            {!loadingReport && !report && !reportError && (
-              <div className="report-empty">
-                <p className="report-empty-text">
-                  No report built yet.
-                </p>
-                <button className="generate-btn" onClick={handleGenerate} disabled={generating}>
-                  {generating ? 'Building…' : 'Build'}
-                </button>
-              </div>
+            {/* ── CLASSWIDE ── */}
+            {reportMode === 'classwide' && (
+              <>
+                {loadingReport && <p className="report-status">Loading…</p>}
+
+                {!loadingReport && !report && !reportError && (
+                  <div className="report-empty">
+                    <p className="report-empty-text">No report built yet.</p>
+                    <button className="generate-btn" onClick={handleGenerate} disabled={generating}>
+                      {generating ? 'Building…' : 'Build'}
+                    </button>
+                  </div>
+                )}
+
+                {!loadingReport && report && (
+                  <div className="report-content">
+                    <div className="report-header">
+                      <div className="report-timestamp">
+                        {new Date(report.created_at).toLocaleDateString('en-US', {
+                          month: 'long', day: 'numeric', year: 'numeric',
+                        })}
+                      </div>
+                      <div className="report-actions">
+                        <button className="secondary-btn" onClick={handleGenerate} disabled={generating}>
+                          {generating ? 'Refreshing…' : 'Refresh Report'}
+                        </button>
+                        <button className="secondary-btn" onClick={handleEmailReport} disabled={emailing}>
+                          {emailing ? 'Sending…' : 'Email Report'}
+                        </button>
+                      </div>
+                    </div>
+                    {emailSuccess && <p className="save-success">Sent to your email</p>}
+                    {emailError && <p className="report-error">{emailError}</p>}
+                    <ReportBody content={report.content} />
+                  </div>
+                )}
+
+                {reportError && !generating && <p className="report-error">{reportError}</p>}
+              </>
             )}
 
-            {!loadingReport && report && (
-              <div className="report-content">
-                <div className="report-header">
-                  <div className="report-timestamp">
-                    {new Date(report.created_at).toLocaleDateString('en-US', {
-                      month: 'long', day: 'numeric', year: 'numeric',
-                    })}
+            {/* ── INDIVIDUAL ── */}
+            {reportMode === 'individual' && (
+              <div className="individual-list">
+                {submissions.length === 0 && (
+                  <p className="report-status">No submissions synced yet.</p>
+                )}
+                {submissions.map((sub, i) => (
+                  <div key={sub.submission_id} className="individual-card">
+                    <div className="individual-card-header">
+                      <span className="individual-label">Student {i + 1}</span>
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={() => handleGenerateIndividual(sub.submission_id)}
+                        disabled={generatingIndividual === sub.submission_id}
+                      >
+                        {generatingIndividual === sub.submission_id
+                          ? 'Generating…'
+                          : sub.individual_report
+                          ? 'Regenerate'
+                          : 'Generate Report'}
+                      </button>
+                    </div>
+                    <p className="individual-preview">
+                      {sub.content.length > 120
+                        ? sub.content.slice(0, 120) + '…'
+                        : sub.content}
+                    </p>
+                    {sub.individual_report && (
+                      <div className="individual-report-body">
+                        <ReportBody content={sub.individual_report} />
+                      </div>
+                    )}
                   </div>
-                  <div className="report-actions">
-                    <button className="secondary-btn" onClick={handleGenerate} disabled={generating}>
-                      {generating ? 'Refreshing…' : 'Refresh Report'}
-                    </button>
-                    <button className="secondary-btn" onClick={handleEmailReport} disabled={emailing}>
-                      {emailing ? 'Sending…' : 'Email Report'}
-                    </button>
-                  </div>
-                </div>
-                {emailSuccess && <p className="save-success">Sent to your email</p>}
-                {emailError && <p className="report-error">{emailError}</p>}
-                <ReportBody content={report.content} />
+                ))}
               </div>
             )}
-
-            {reportError && !generating && <p className="report-error">{reportError}</p>}
           </section>
         )}
       </main>

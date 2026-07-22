@@ -8,6 +8,7 @@ from sqlalchemy.sql import func
 
 from app.models.user import User
 from app.models.coursework import Coursework
+from app.models.submission import Submission
 from app.models.report import Report
 
 RESEND_API_URL = "https://api.resend.com/emails"
@@ -297,3 +298,88 @@ def _report_to_html(title: str, content: str) -> str:
     </div>
   </div>
 </body></html>"""
+
+
+def get_submissions_list(coursework_id: int, user: User, db: Session) -> list:
+    # Returns all submissions for an assignment, including any individual AI reports
+    # Used to populate the Individual tab on the Assignment Detail page
+    coursework = db.query(Coursework).filter(
+        Coursework.coursework_id == coursework_id,
+        Coursework.user_id == user.user_id,
+    ).first()
+
+    if not coursework:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    return [
+        {
+            "submission_id": s.submission_id,
+            "content": s.content,
+            "individual_report": s.individual_report,
+        }
+        for s in coursework.submissions
+    ]
+
+
+def generate_individual_report(coursework_id: int, submission_id: int, user: User, db: Session) -> dict:
+    # Generates an AI report focused on a single student's submission
+    # Evaluates what they got right/wrong and gives a specific recommendation for that student
+    coursework = db.query(Coursework).filter(
+        Coursework.coursework_id == coursework_id,
+        Coursework.user_id == user.user_id,
+    ).first()
+
+    if not coursework:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    submission = db.query(Submission).filter(
+        Submission.submission_id == submission_id,
+        Submission.coursework_id == coursework_id,
+    ).first()
+
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    context_section = (
+        f"\nContext provided by the teacher:\n{coursework.context}\n"
+        if coursework.context
+        else ""
+    )
+
+    prompt = f"""You are an educational analyst reviewing a single student's submission for a teacher.
+Evaluate this student's response carefully and report exactly what you find. Do not generalize — focus only on what this specific student wrote.
+
+Assignment: {coursework.title}
+{context_section}
+Student Submission:
+{submission.content}
+
+Generate a report with exactly three sections using ## markdown headings:
+
+## What This Student Got Right
+Describe what the student answered correctly. Be specific — reference what they actually wrote. If nothing was correct, say so directly.
+
+## What This Student Got Wrong or Missed
+Identify every mistake or gap in this student's response:
+- Describe the specific error or missing element
+- Explain why it is incorrect or insufficient based on the assignment
+If the submission is blank or completely off-topic, state that clearly.
+
+## Recommendation
+Give 1 to 3 specific, actionable suggestions the teacher can use when following up with this student. Name the exact concept or skill they need to revisit.
+
+Be precise and direct. Only report what is supported by this student's actual submission."""
+
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+    )
+
+    submission.individual_report = response.choices[0].message.content
+    db.commit()
+
+    return {
+        "submission_id": submission.submission_id,
+        "individual_report": submission.individual_report,
+    }

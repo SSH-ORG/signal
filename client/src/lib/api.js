@@ -97,6 +97,28 @@ export async function generateReport(courseworkId) {
   return response.json()
 }
 
+// Returns all submissions for an assignment, including any individual AI reports already generated
+export async function getSubmissions(courseworkId) {
+  const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions`, {
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error('Failed to fetch submissions')
+  return response.json()
+}
+
+// Generates an individual AI report for one specific student's submission
+export async function generateIndividualReport(courseworkId, submissionId) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions/${submissionId}`,
+    { method: 'POST', credentials: 'include' }
+  )
+  if (!response.ok) {
+    const err = await response.json()
+    throw new Error(err.detail || 'Failed to generate individual report')
+  }
+  return response.json()
+}
+
 // Deletes the generated report for an assignment so the teacher can regenerate
 export async function deleteReport(courseworkId) {
   const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report`, {
