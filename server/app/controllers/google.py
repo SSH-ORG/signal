@@ -293,6 +293,21 @@ async def import_google_coursework(
             db.commit()
             db.refresh(coursework)
 
+        # Fetch the class roster so we can store each student's real name with their submission
+        # Requires classroom.rosters.readonly scope — falls back to None if not granted yet
+        roster_resp = await _get_with_refresh(
+            client,
+            f"{CLASSROOM_BASE}/courses/{course_id}/students",
+            user, db,
+        )
+        roster = {}
+        if roster_resp.status_code == 200:
+            for student in roster_resp.json().get("students", []):
+                uid = student.get("userId")
+                name = student.get("profile", {}).get("name", {}).get("fullName")
+                if uid and name:
+                    roster[uid] = name
+
         # Fetch all current student submissions from Google Classroom
         subs_resp = await _get_with_refresh(
             client,
@@ -305,13 +320,19 @@ async def import_google_coursework(
 
         submissions_data = subs_resp.json().get("studentSubmissions", [])
 
-        # Build a set of submission IDs we already have so we don't add duplicates
-        existing_ids = {s.google_submission_id for s in coursework.submissions}
+        # Build a lookup of existing submissions so we can skip duplicates and backfill names
+        existing_by_google_id = {s.google_submission_id: s for s in coursework.submissions}
         new_count = 0
+
+        # Backfill student_name on submissions that were synced before the roster feature existed
+        if roster:
+            for existing_sub in coursework.submissions:
+                if existing_sub.student_name is None and existing_sub.google_user_id:
+                    existing_sub.student_name = roster.get(existing_sub.google_user_id)
 
         for sub in submissions_data:
             # Skip if we already have this submission
-            if sub["id"] in existing_ids:
+            if sub["id"] in existing_by_google_id:
                 continue
 
             content = await _extract_submission_content(sub, user, db, client)
@@ -320,11 +341,13 @@ async def import_google_coursework(
             if not content:
                 continue
 
+            user_id = sub.get("userId")
             submission = Submission(
                 content=content,
                 coursework_id=coursework.coursework_id,
                 google_submission_id=sub["id"],
-                google_user_id=sub.get("userId"),
+                google_user_id=user_id,
+                student_name=roster.get(user_id),  # None if roster fetch failed or student not found
             )
             db.add(submission)
             new_count += 1

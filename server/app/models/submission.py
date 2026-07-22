@@ -16,6 +16,7 @@ class Submission(Base):
     # never expose it raw in API responses, only ever surface an anonymized label
     # derived from it (e.g. "Student #4f2a") when flagged-student features are built.
     google_user_id = Column(Text)
+    student_name = Column(Text, nullable=True)        # Full name from Google Classroom roster
     individual_report = Column(Text, nullable=True)  # AI-generated report for this one student's submission
 
     # Link back to the parent coursework

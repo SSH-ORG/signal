@@ -469,6 +469,32 @@
   border-top: 1px solid var(--border);
 }
 
+/* Top bar: Generate All button + flagged summary count */
+.individual-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Red left border on cards where the AI detected an issue */
+.individual-card--flagged {
+  border-left: 3px solid var(--error, #d93025);
+}
+
+/* Counts how many students are flagged across the class */
+.flag-summary-badge {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--error, #d93025);
+  background: #fff0f0;
+  border: 1px solid #fdd;
+  border-radius: 100px;
+  padding: 3px 10px;
+}
+
+/* .flag-badge and modifier classes moved to Screens.css (shared) */
+
 .report-header {
   display: flex;
   align-items: center;
@@ -487,43 +513,4 @@
   color: var(--text);
 }
 
-.report-body {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.report-section {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.section-heading {
-  margin: 0;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--accent);
-}
-
-.section-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.section-body p {
-  margin: 0;
-  font-size: 0.9rem;
-  color: var(--text-h);
-  line-height: 1.65;
-}
-
-.section-body strong {
-  color: var(--text-h);
-  font-weight: 600;
-}
+/* .report-body and related classes moved to components/ReportBody.css */

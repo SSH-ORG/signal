@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getReport, generateReport, emailReport, importCoursework, updateCourseworkContext, getGCRubric, getSubmissions, generateIndividualReport } from '../lib/api'
 import Icon from '../components/Icon'
+import ReportBody from '../components/ReportBody'
 import './Screens.css'
 import './AssignmentDetailPage.css'
 
@@ -61,7 +62,9 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
   // Individual report state — 'classwide' | 'individual'
   const [reportMode, setReportMode] = useState('classwide')
   const [submissions, setSubmissions] = useState([])
-  const [generatingIndividual, setGeneratingIndividual] = useState(null) // submission_id being generated
+  const [generatingIndividual, setGeneratingIndividual] = useState(null) // submission_id currently generating
+  const [generatingAll, setGeneratingAll] = useState(false)
+  const [generateProgress, setGenerateProgress] = useState({ done: 0, total: 0 })
 
   const courseworkId = record?.coursework_id
 
@@ -198,6 +201,30 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
     } finally {
       setGeneratingIndividual(null)
     }
+  }
+
+  // Generates individual reports for every student that doesn't have one yet,
+  // one at a time so Groq isn't hammered with 20 parallel requests.
+  // Updates each card live as its report finishes.
+  async function handleGenerateAll() {
+    const toGenerate = submissions.filter((s) => !s.individual_report)
+    if (toGenerate.length === 0) return
+    setGeneratingAll(true)
+    setGenerateProgress({ done: 0, total: toGenerate.length })
+    for (const sub of toGenerate) {
+      try {
+        const result = await generateIndividualReport(record.coursework_id, sub.submission_id)
+        setSubmissions((prev) =>
+          prev.map((s) =>
+            s.submission_id === sub.submission_id
+              ? { ...s, individual_report: result.individual_report }
+              : s
+          )
+        )
+      } catch { /* skip this student and continue */ }
+      setGenerateProgress((prev) => ({ ...prev, done: prev.done + 1 }))
+    }
+    setGeneratingAll(false)
   }
 
   return (
@@ -428,35 +455,84 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                 {submissions.length === 0 && (
                   <p className="report-status">No submissions synced yet.</p>
                 )}
-                {submissions.map((sub, i) => (
-                  <div key={sub.submission_id} className="individual-card">
-                    <div className="individual-card-header">
-                      <span className="individual-label">Student {i + 1}</span>
-                      <button
-                        type="button"
-                        className="secondary-btn"
-                        onClick={() => handleGenerateIndividual(sub.submission_id)}
-                        disabled={generatingIndividual === sub.submission_id}
-                      >
-                        {generatingIndividual === sub.submission_id
-                          ? 'Generating…'
-                          : sub.individual_report
-                          ? 'Regenerate'
-                          : 'Generate Report'}
-                      </button>
-                    </div>
-                    <p className="individual-preview">
-                      {sub.content.length > 120
-                        ? sub.content.slice(0, 120) + '…'
-                        : sub.content}
-                    </p>
-                    {sub.individual_report && (
-                      <div className="individual-report-body">
-                        <ReportBody content={sub.individual_report} />
+
+                {submissions.length > 0 && (() => {
+                  // Count students whose report shows anything less than full understanding
+                  const flaggedCount = submissions.filter((s) => {
+                    const lvl = getFlagLevel(s.individual_report)
+                    return lvl && lvl !== 'on-track'
+                  }).length
+                  const allGenerated = submissions.every((s) => s.individual_report)
+
+                  return (
+                    <>
+                      {/* Generate All bar — shows live progress while running */}
+                      <div className="individual-bar">
+                        <button
+                          type="button"
+                          className="secondary-btn"
+                          onClick={handleGenerateAll}
+                          disabled={generatingAll || allGenerated}
+                        >
+                          {generatingAll
+                            ? `Generating… ${generateProgress.done} / ${generateProgress.total}`
+                            : allGenerated
+                            ? 'All Reports Generated'
+                            : `Generate All (${submissions.filter((s) => !s.individual_report).length} remaining)`}
+                        </button>
+                        {flaggedCount > 0 && (
+                          <span className="flag-summary-badge">
+                            {flaggedCount} student{flaggedCount !== 1 ? 's' : ''} flagged
+                          </span>
+                        )}
                       </div>
-                    )}
-                  </div>
-                ))}
+
+                      {submissions.map((sub, i) => {
+                        const flagLevel = getFlagLevel(sub.individual_report)
+                        return (
+                          <div
+                            key={sub.submission_id}
+                            className={`individual-card${flagLevel && flagLevel !== 'on-track' ? ' individual-card--flagged' : ''}`}
+                          >
+                            <div className="individual-card-header">
+                              <span className="individual-label">{sub.student_name || `Student ${i + 1}`}</span>
+                              {flagLevel && (
+                                <span className={`flag-badge flag-badge--${flagLevel}`}>
+                                  {flagLevel === 'misconception' && 'Misconception'}
+                                  {flagLevel === 'partial' && 'Partial understanding'}
+                                  {flagLevel === 'no-engagement' && 'No response'}
+                                  {flagLevel === 'on-track' && 'On track'}
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                className="secondary-btn"
+                                onClick={() => handleGenerateIndividual(sub.submission_id)}
+                                disabled={generatingIndividual === sub.submission_id || generatingAll}
+                              >
+                                {generatingIndividual === sub.submission_id
+                                  ? 'Generating…'
+                                  : sub.individual_report
+                                  ? 'Regenerate'
+                                  : 'Generate'}
+                              </button>
+                            </div>
+                            <p className="individual-preview">
+                              {sub.content.length > 120
+                                ? sub.content.slice(0, 120) + '…'
+                                : sub.content}
+                            </p>
+                            {sub.individual_report && (
+                              <div className="individual-report-body">
+                                <ReportBody content={sub.individual_report} />
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </>
+                  )
+                })()}
               </div>
             )}
           </section>
@@ -467,41 +543,30 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
 }
 
 
-// Renders the AI markdown report into clean readable sections
-// Splits on ## headings and renders bold text within each section
-function ReportBody({ content }) {
-  const sections = content.split(/(?=##\s)/g).filter(Boolean)
+// Returns the severity level for a student's individual report.
+// Supports both the old prompt format (explicit labels) and the new format
+// (section-based signals) so existing reports don't break after the prompt update.
+function getFlagLevel(individualReport) {
+  if (!individualReport) return null
 
-  return (
-    <div className="report-body">
-      {sections.map((section, i) => {
-        const lines = section.split('\n').filter(Boolean)
-        const heading = lines[0].replace(/^#+\s*/, '')
-        const body = lines.slice(1).join('\n')
+  // Old prompt format
+  if (individualReport.includes('No engagement')) return 'no-engagement'
+  if (individualReport.includes('Misconception present')) return 'misconception'
+  if (individualReport.includes('Partial understanding')) return 'partial'
+  if (individualReport.includes('Demonstrates understanding')) return 'on-track'
 
-        return (
-          <div key={i} className="report-section">
-            <h3 className="section-heading">{heading}</h3>
-            <div className="section-body">
-              {body.split('\n').filter(Boolean).map((line, j) => (
-                <p key={j} dangerouslySetInnerHTML={{ __html: formatLine(line) }} />
-              ))}
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
+  // New prompt format — submission quality issues
+  if (
+    individualReport.includes('Submission was blank') ||
+    individualReport.includes('Submission too short') ||
+    individualReport.includes('Submission did not address')
+  ) return 'no-engagement'
 
+  // New prompt format — misconceptions section
+  if (individualReport.includes('No misconceptions detected')) return 'on-track'
+  if (individualReport.includes('Misconceptions Detected')) return 'misconception'
 
-// Converts **bold** markdown syntax to HTML <strong> tags
-// Only used on trusted AI output — not user input
-function formatLine(line) {
-  return line
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/^\*+\s/, '')
-    .replace(/^-+\s/, '')
+  return 'on-track'
 }
 
 
