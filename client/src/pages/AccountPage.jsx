@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { updateProfile, deleteAccount, logout } from '../lib/api'
+import { getTheme, setTheme } from '../lib/theme.js'
 import './Screens.css'
 import './AccountPage.css'
 
@@ -12,6 +13,8 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileError, setProfileError] = useState(null)
   const [profileSaved, setProfileSaved] = useState(false)
+
+  const [theme, setThemeState] = useState(getTheme)
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(user.email_notifications_enabled)
   const [savingNotifications, setSavingNotifications] = useState(false)
@@ -37,6 +40,11 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
   }
 
   // Toggle is optimistic — flips immediately, reverts if the save fails
+  function handleSetTheme(t) {
+    setTheme(t)
+    setThemeState(t)
+  }
+
   async function handleToggleNotifications() {
     const next = !notificationsEnabled
     setNotificationsEnabled(next)
@@ -128,6 +136,23 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
             >
               <span className="account-toggle-knob" />
             </button>
+          </div>
+        </section>
+
+        <section className="detail-section">
+          <h2 className="detail-section-title">Appearance</h2>
+          <p className="detail-section-hint">Choose how Signal looks. System follows your device setting.</p>
+          <div className="theme-picker">
+            {['system', 'light', 'dark'].map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={`theme-btn${theme === t ? ' theme-btn--active' : ''}`}
+                onClick={() => handleSetTheme(t)}
+              >
+                {t.charAt(0).toUpperCase() + t.slice(1)}
+              </button>
+            ))}
           </div>
         </section>
 
