@@ -278,7 +278,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                     className="context-textarea context-textarea--small"
                     value={descriptionText}
                     onChange={(e) => { setDescriptionText(e.target.value); setSaveSuccess(false) }}
-                    placeholder="No description found in Google Classroom, you can add one here."
+                    placeholder="No description found in Google Classroom, add one here."
                     rows={3}
                   />
                 </div>
@@ -302,7 +302,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                     className="context-textarea context-textarea--small"
                     value={rubricText}
                     onChange={(e) => { setRubricText(e.target.value); setSaveSuccess(false) }}
-                    placeholder="No rubric yet. Sync Rubric from Google Classroom, or type one here."
+                    placeholder="No rubric yet. Sync Rubric from Google Classroom, or add one here."
                     rows={3}
                   />
                   <button
@@ -339,7 +339,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
             {!loadingReport && !report && !reportError && (
               <div className="report-empty">
                 <p className="report-empty-text">
-                  No report built yet. Click below to build one.
+                  No report built yet.
                 </p>
                 <button className="generate-btn" onClick={handleGenerate} disabled={generating}>
                   {generating ? 'Building…' : 'Build'}

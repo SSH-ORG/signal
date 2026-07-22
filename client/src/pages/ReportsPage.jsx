@@ -110,15 +110,16 @@ function ReportsPage({ gcAssignments, onViewAssignment, onGoToAssignments, onGoT
             <h1 className="screen-title">Reports</h1>
             <p className="screen-subtitle">
               {classFilter === 'all' ? 'reports across all classes' : `reports across ${classFilter}`}
+              {timeFilter !== 'all' && ` from the last ${timeFilter === '7days' ? '7' : '30'} days`}
             </p>
           </div>
 
           <div className="reports-filters">
             <label className="reports-filter">
-              time
+              Time
               <span className="reports-filter-select-wrap">
                 <select value={timeFilter} onChange={(e) => setTimeFilter(e.target.value)}>
-                  <option value="all">All time</option>
+                  <option value="all">ALL</option>
                   <option value="7days">Last 7 days</option>
                   <option value="30days">Last 30 days</option>
                 </select>
@@ -128,10 +129,10 @@ function ReportsPage({ gcAssignments, onViewAssignment, onGoToAssignments, onGoT
 
             {classes.length > 0 && (
               <label className="reports-filter">
-                class
+                Class
                 <span className="reports-filter-select-wrap">
                   <select value={classFilter} onChange={(e) => setClassFilter(e.target.value)}>
-                    <option value="all">All classes</option>
+                    <option value="all">ALL</option>
                     {classes.map((c) => (
                       <option key={c.course_id} value={c.course_name}>{c.course_name}</option>
                     ))}
