@@ -354,7 +354,16 @@ Assignment: {coursework.title}
 Student Submission:
 {submission.content}
 
-Generate a report with exactly three sections using ## markdown headings:
+Generate a report with exactly four sections using ## markdown headings:
+
+## Understanding Assessment
+State clearly whether this student demonstrates understanding of the concept. Choose one:
+- **Demonstrates understanding** — the student shows a clear grasp of the core concept
+- **Partial understanding** — the student shows some grasp but has notable gaps or errors
+- **Misconception present** — the student shows a specific incorrect belief about the concept
+- **No engagement** — the submission is blank, off-topic, or does not attempt the question
+
+Then in 1–2 sentences, explain what in the submission led to this assessment.
 
 ## What This Student Got Right
 Describe what the student answered correctly. Be specific — reference what they actually wrote. If nothing was correct, say so directly.
@@ -363,10 +372,11 @@ Describe what the student answered correctly. Be specific — reference what the
 Identify every mistake or gap in this student's response:
 - Describe the specific error or missing element
 - Explain why it is incorrect or insufficient based on the assignment
+- If a misconception is present, name it explicitly (e.g. "Student believes X, but the correct understanding is Y")
 If the submission is blank or completely off-topic, state that clearly.
 
 ## Recommendation
-Give 1 to 3 specific, actionable suggestions the teacher can use when following up with this student. Name the exact concept or skill they need to revisit.
+Give 1 to 3 specific, actionable suggestions the teacher can use when following up with this student. If a misconception was identified, address it directly — name the concept that needs to be corrected and how.
 
 Be precise and direct. Only report what is supported by this student's actual submission."""
 
