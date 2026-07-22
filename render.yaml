@@ -1,0 +1,58 @@
+databases:
+  - name: signal-db
+    databaseName: signal_db
+    user: signal
+    plan: free
+
+services:
+  # FastAPI backend
+  - type: web
+    name: signal-server
+    env: python
+    rootDir: server
+    plan: free
+    buildCommand: "pip install -r requirements.txt && alembic upgrade head"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        fromDatabase:
+          name: signal-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      # Secrets — set these in the Render dashboard after the Blueprint creates
+      # the service (Blueprint files should never carry real credentials).
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      # The deployed client's URL (e.g. https://signal-client.onrender.com).
+      # Both services get their final *.onrender.com URLs only after the first
+      # deploy, so fill this in once signal-client exists, then redeploy.
+      - key: FRONTEND_URL
+        sync: false
+
+  # Vite/React frontend, built as a static site
+  - type: web
+    name: signal-client
+    env: static
+    rootDir: client
+    plan: free
+    buildCommand: "npm install && npm run build"
+    staticPublishPath: dist
+    envVars:
+      # The deployed backend's URL (e.g. https://signal-server.onrender.com).
+      # Vite bakes this in at build time, so it must be set here (not just at
+      # runtime) before the first build, then redeploy after signal-server exists.
+      - key: VITE_API_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
