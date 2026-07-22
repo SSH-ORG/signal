@@ -52,6 +52,10 @@ function HelpPage() {
                 Without a mental model or rubric, the AI will still analyze submissions but won't
                 know what the expected answer is, so the report will be less targeted.
               </p>
+              <p className="help-step-text">
+                <strong>Reminder:</strong> use the <strong>Save Context</strong> button to save your
+                changes before building a report.
+              </p>
             </div>
           </div>
 

@@ -100,32 +100,33 @@ Below is a walkthrough of **signal's** user flow.
 
 *<details><summary><strong>Choose a class</strong></summary>*
 
-![paste-image-here](./docs/img/paste-image-here.png)
+![Choose a class](./docs/img/choose-a-class.png)
 
 The Home screen lists your Google Classroom courses. Choose one to see its assignments.
 </details>
 
 *<details><summary><strong>Sync an assignment</strong></summary>*
 
-![paste-image-here](./docs/img/paste-image-here.png)
+![Sync an assignment](./docs/img/sync-an-assignment.png)
 
-Choose an assignment, then click the sync icon next to the submission count to pull its
-submissions into Signal — the first click syncs the assignment itself, later clicks sync new submissions.
+Choose an assignment, then click the sync icon next to the submission count to sync the assignment itself, later clicks sync new submissions.
 </details>
 
 *<details><summary><strong>Add context</strong></summary>*
 
-![paste-image-here](./docs/img/paste-image-here.png)
+![Add context](./docs/img/add-context.png)
 
 Describe how student understanding should look like in the Mental Model box, and optionally
 include the assignment description and rubric synced from Classroom.
+
+***Reminder:*** use the *Save Context* button to save your changes before building a report.
 </details>
 
 *<details><summary><strong>Build an AI Report</strong></summary>*
 
-![paste-image-here](./docs/img/paste-image-here.png)
+![Build an AI Report](./docs/img/build-an-ai-report.png)
 
-Click Build to analyze every submission against that context and produce a class-wideconfusion report.
+Click Build to analyze every submission against that context and produce a class-wide confusion report.
 </details>
 
 
