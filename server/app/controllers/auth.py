@@ -84,7 +84,7 @@ async def google_callback(request: Request, db: Session):
     request.session["user_id"] = user.user_id
 
     # Send them to the frontend dashboard
-    return RedirectResponse(url="http://localhost:5173")
+    return RedirectResponse(url=os.getenv("FRONTEND_URL", "http://localhost:5173"))
 
 
 # Clears the session cookie — logs the teacher out

@@ -17,11 +17,11 @@ app = FastAPI(redirect_slashes=False)
 # The SESSION_SECRET is used to sign the cookie so it can't be tampered with
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET"))
 
-# CORS middleware — allows the React frontend (running on port 5173) to talk to this API
+# CORS middleware — allows the React frontend to talk to this API
 # Without this, the browser would block all requests from the frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # React dev server
+    allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:5173")],
     allow_credentials=True,                   # Required so session cookies are sent with requests
     allow_methods=["*"],                      # Allow GET, POST, DELETE, etc.
     allow_headers=["*"],
