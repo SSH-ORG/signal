@@ -15,7 +15,18 @@ app = FastAPI(redirect_slashes=False)
 
 # Session middleware — stores a signed cookie in the browser so we know who's logged in
 # The SESSION_SECRET is used to sign the cookie so it can't be tampered with
-app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET"))
+# In production the client and server are deployed on different *.onrender.com
+# subdomains, so every API call is cross-site — same_site="none" is required, since
+# browsers drop SameSite=Lax cookies on cross-site fetch/XHR requests entirely.
+# same_site="none" requires https_only=True, which breaks local dev over http://,
+# so only turn it on when running on Render (Render always sets RENDER=true).
+is_production = os.getenv("RENDER") is not None
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SESSION_SECRET"),
+    same_site="none" if is_production else "lax",
+    https_only=is_production,
+)
 
 # CORS middleware — allows the React frontend to talk to this API
 # Without this, the browser would block all requests from the frontend
