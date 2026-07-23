@@ -4,7 +4,7 @@
 
 **signal** is a Google Classroom helper tool, we read each submission students turn in, and turn them into a clear, class-wide report with confusion themes and a call-to-action — before confusion sets into the next lesson. 
 
-**Live deployed link:** [paste-link-here]
+**Live deployed link:** https://signal-client.onrender.com/
 
 ### Team SSH
 ***
@@ -163,10 +163,10 @@ MVP complete. User flow: sign in > sync Google Classroom > choose a class > choo
 
 #### Still in progress:
 - Email feature integration
-- AI feature accuracy
+- AI feature success
 
 #### Limitations
-- AI feature is still in demo mode (please share feedback on our form: [paste-link-here])
+- AI feature is still in demo mode (please share feedback: https://forms.gle/w5ZB37N6FFe9ScVp9)
 - Google has not approved our app so we are using a demo version, only approved test users (manually added) can sign in with Google. Please email Syed: *xayanmay@gmail.com* for approval.
 
 ### License
