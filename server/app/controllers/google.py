@@ -166,9 +166,10 @@ async def fetch_rubric(google_coursework_id: str, course_id: str, user: User, db
     return {"rubric_text": "\n".join(lines)}
 
 
-async def fetch_google_coursework(user: User, db: Session) -> list:
+async def fetch_google_coursework(user: User, db: Session) -> dict:
     # Fetches all active courses and their assignments from Google Classroom
-    # Returns a flat list of assignments across all courses the teacher owns
+    # Returns every active course (even ones with no assignments yet) alongside
+    # a flat list of assignments across all courses the teacher owns
     async with httpx.AsyncClient() as client:
         # Step 1 — get all active courses where this teacher is the owner
         courses_resp = await _get_with_refresh(
@@ -216,6 +217,14 @@ async def fetch_google_coursework(user: User, db: Session) -> list:
                     "course_name": course.get("name", ""),  # Which class this assignment belongs to
                 })
 
+        # Every active course, regardless of whether it has any assignments yet —
+        # the Classes page lists all of these; AssignmentsPage shows an empty
+        # state for ones with nothing in all_coursework
+        courses_out = [
+            {"course_id": course["id"], "course_name": course.get("name", "")}
+            for course in courses
+        ]
+
     # Reconcile stored course_name against live Classroom data on every load — covers
     # rows whose course_name was never saved correctly (e.g. a past import bug) or
     # whose class was renamed since import. Only touches rows still in the live list,
@@ -236,7 +245,7 @@ async def fetch_google_coursework(user: User, db: Session) -> list:
         if changed:
             db.commit()
 
-    return all_coursework
+    return {"courses": courses_out, "coursework": all_coursework}
 
 
 async def import_google_coursework(

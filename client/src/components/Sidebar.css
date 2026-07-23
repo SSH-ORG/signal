@@ -7,6 +7,15 @@
   padding: 20px 12px;
   border-right: 1px solid var(--border);
   background: var(--surface);
+  /* Fixed (not sticky) so it's pinned from the very first pixel of scroll —
+     sticky would still drift up to its own height before locking in place.
+     --topbar-height is set on .app-shell in AppShell.css. */
+  position: fixed;
+  top: var(--topbar-height);
+  left: 0;
+  bottom: 0;
+  overflow-y: auto;
+  z-index: 5;
 }
 
 .sidebar-item {
@@ -42,6 +51,7 @@
 
 @media (max-width: 480px) {
   .sidebar {
+    position: static;
     width: 100%;
     flex-direction: row;
     justify-content: center;

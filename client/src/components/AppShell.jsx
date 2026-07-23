@@ -31,11 +31,13 @@ function AppShell({ active, displayName, onHome, onReports, onAccount, onHelp, c
           >
             <Icon name="menu" className="app-menu-icon" />
           </button>
-          <Logo size="medium" />
+          <button type="button" className="app-logo-btn" aria-label="Go to homepage" onClick={onHome}>
+            <Logo size="medium" />
+          </button>
         </div>
         <span className="app-topbar-greeting">Hi, {displayName || 'there'}</span>
       </header>
-      <div className="app-body">
+      <div className={`app-body${sidebarOpen ? ' app-body--sidebar-open' : ''}`}>
         {sidebarOpen && (
           <Sidebar
             active={active}
