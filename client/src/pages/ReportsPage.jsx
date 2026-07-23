@@ -257,7 +257,13 @@ function ReportsPage({ gcAssignments, onViewAssignment, onGoToAssignments, onGoT
                         {/* ── Classwide Report ── */}
                         {cached?.loading && <p className="screen-status">Loading report…</p>}
                         {cached?.error && <p className="screen-status screen-status--error">{cached.error}</p>}
-                        {cached?.content && <ReportBody content={cached.content} />}
+                        {cached?.content && (
+                          <ReportBody
+                            content={cached.content}
+                            mode="classwide"
+                            totalSubmissions={(submissionsCache[report.coursework_id] || []).length}
+                          />
+                        )}
 
                         {/* ── Individual Reports ── */}
                         {(() => {
