@@ -441,7 +441,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                     </div>
                     {emailSuccess && <p className="save-success">Sent to your email</p>}
                     {emailError && <p className="report-error">{emailError}</p>}
-                    <ReportBody content={report.content} />
+                    <ReportBody content={report.content} mode="classwide" totalSubmissions={submissions.length} />
                   </div>
                 )}
 

@@ -38,22 +38,7 @@ def generate_report(coursework_id: int, user: User, db: Session) -> dict:
         for i, sub in enumerate(coursework.submissions)
     ])
 
-    has_rubric = bool(coursework.context and "Rubric:" in coursework.context)
     context_str = coursework.context if coursework.context else "No context provided — analyze submissions based on content only."
-
-    # Grade section only appears when a rubric was actually provided
-    grade_section = """## 📝 Submission Grades
-- **[Student Name]** — [Grade based on rubric] — [one sentence justification]
-
----
-
-""" if has_rubric else ""
-
-    rubric_rule = (
-        "- Rubric exists: include the Submission Grades section for every student"
-        if has_rubric
-        else "- No rubric provided: skip the Submission Grades section entirely — do not mention grading at all"
-    )
 
     prompt = f"""You are an expert educator analyzing student submissions for a virtual classroom.
 
@@ -69,51 +54,63 @@ STUDENT SUBMISSIONS:
 
 ---
 
-CLASS-WIDE REPORT FORMAT — follow exactly:
+CLASS-WIDE REPORT FORMAT — follow exactly, these are the ONLY 6 sections allowed:
 
 ## 📊 Class Overview
-- Total submissions reviewed: [number]
-- Submissions flagged as insufficient: [number]
-- Students showing strong understanding: [number]
-- Students flagged for intervention: [number]
+1–2 sentences, general and surface-level, giving a quick read on how the class understood
+this assignment overall. No student names, no specific misconceptions or themes here —
+save the detail for the sections below.
 
 ---
 
-## ⚠️ Insufficient Submissions
-List any submissions that were blank, too short (under 15 words), off-topic, or clearly not a real attempt.
-
-Format each as:
-- **[Student Name]** — [one sentence reason: blank / off-topic / too short]
-
-If none, write: None detected.
+## 🔍 Overview Details
+1–2 short paragraphs of expanded narrative on the class's understanding as a whole — broader
+patterns and context behind the surface-level summary above. Still no per-student names,
+misconception labels, or theme labels — those belong in the sections below, this is
+narrative color only.
 
 ---
 
-## ❌ Flagged Students
-Group students who share the same misconception together.
+## 🚩 Flagged Students
+A flat list of just the names of every student who did not demonstrate understanding —
+this includes misconceptions, blank/too-short/off-topic submissions, and non-attempts.
+No grouping, no reasons, just names, one per line:
 
-**Misconception:** [describe the specific wrong idea in one sentence]
-- **[Student Name]** — [one sentence summary of what their submission showed]
+- [Student Name]
 
-If no students are flagged, write: All students demonstrated understanding.
-
----
-
-## ✅ Strong Submissions
-- **[Student Name]** — [one sentence on what they did well]
+If no students are flagged, write: No students flagged.
 
 ---
 
-{grade_section}## 📌 Common Misconceptions
-Summarize the 2–3 most common misconceptions detected across the class.
+## ⚠️ Common Misconceptions
+Group flagged students by the specific misconception or issue they share.
 
-- **[Misconception]:** [one sentence explanation of the correct understanding]
+**Misconception:** [describe the specific wrong idea, or issue like "blank submission" / "did not attempt the task", in one sentence]
+- [Student Name]
+- [Student Name]
 
-If none, write: No common misconceptions detected.
+Repeat the **Misconception:** block for each distinct misconception found. Every name that
+appears in Flagged Students must appear under exactly one misconception here.
+
+If no students are flagged, write: No common misconceptions detected.
 
 ---
 
-## 💡 Recommended Next Steps
+## ✅ Solid Themes
+Group students who demonstrated strong understanding by the theme/skill they showed it through.
+
+**Theme:** [describe the specific thing done well, in one sentence]
+- [Student Name]
+- [Student Name]
+
+Repeat the **Theme:** block for each distinct theme found. A student here should not also
+appear in Flagged Students.
+
+If no students showed strong understanding, write: No solid themes detected.
+
+---
+
+## 💡 Next Steps
 2–3 specific actionable things for the teacher to do next class based on what you saw.
 
 - [Specific action]
@@ -122,19 +119,21 @@ If none, write: No common misconceptions detected.
 ---
 
 EDGE CASE RULES — follow strictly no matter what:
-- Blank submission → flag as insufficient, do not analyze
-- Under 15 words → flag as insufficient unless it directly and correctly answers the question
-- Off-topic or gibberish → flag as insufficient
-- If ALL submissions are blank → only output Overview and Insufficient Submissions, then write: "Unable to generate report — no valid submissions found."
-- If ALL submissions show strong understanding → say so clearly, do not invent misconceptions
-- If only 1 student is struggling → do not call it a "common" misconception
+- Blank, too short (under 15 words unless it directly and correctly answers the question),
+  off-topic, or gibberish submissions → treat as flagged, group under a misconception like
+  "Did not attempt the task" — do not skip them and do not invent a separate section for them
+- If ALL submissions are blank or non-attempts → Flagged Students lists everyone, Common
+  Misconceptions has one group "Did not attempt the task", Solid Themes says none detected
+- If ALL submissions show strong understanding → say so clearly in Solid Themes, Flagged
+  Students and Common Misconceptions both say none
+- If only 1 student is struggling → do not call it a "common" misconception, still list them
+  individually under their own **Misconception:** block
 - Never make up student names or invent submissions
 - Never give generic feedback — always tie it to actual submission content
-- If no context provided → still analyze but note it at the top of the report
-{rubric_rule}
-- Never grade without a rubric — do not invent grading criteria
-- If rubric exists but submission is blank → grade as: 0 / No submission
-- Do not use long paragraphs anywhere — keep everything scannable and concise"""
+- Never grade or mention rubric scoring — this report does not grade submissions
+- Class Overview and Overview Details must stay general/narrative — never repeat a student
+  name, a **Misconception:** label, or a **Theme:** label in either of those two sections
+- Do not use long paragraphs anywhere outside Overview Details — keep everything else scannable and concise"""
 
     # Send the prompt to Groq (Llama 3.3 70B) and get the report back
     # temperature=0.3 keeps responses focused and grounded — less creative drift
