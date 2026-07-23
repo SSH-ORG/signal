@@ -20,7 +20,8 @@ class ImportRequest(BaseModel):
 
 
 # GET /api/google/coursework
-# Returns all assignments from the teacher's active Google Classroom courses
+# Returns { courses, coursework } — every active Google Classroom course (even ones
+# with no assignments yet) plus a flat list of assignments across all of them
 # Does NOT save anything to our database — just a live fetch for browsing
 @router.get("/coursework")
 async def list_google_coursework(

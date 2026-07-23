@@ -1,25 +1,14 @@
-import { useMemo } from 'react'
 import './Screens.css'
 
 // Banner colors cycle across cards the same way Google Classroom assigns a
 // color per class — picked to stay in-family with the app's purple accent.
 const BANNER_COLORS = ['#aa3bff', '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#6366f1']
 
-// First screen after login — lists the teacher's Google Classroom courses.
-// Clicking a course drills down into AssignmentsPage.
-function CoursesPage({ gcAssignments, loading, error, onSelectCourse }) {
-  // Derive unique courses from the flat GC assignments list
-  const courses = useMemo(() => {
-    const seen = new Set()
-    return gcAssignments
-      .filter((a) => {
-        if (seen.has(a.course_id)) return false
-        seen.add(a.course_id)
-        return true
-      })
-      .map((a) => ({ course_id: a.course_id, course_name: a.course_name }))
-  }, [gcAssignments])
-
+// First screen after login — lists every one of the teacher's active Google
+// Classroom courses, including ones with no assignments yet. Clicking a
+// course drills down into AssignmentsPage, which shows its own empty state
+// for classes with no coursework.
+function CoursesPage({ courses, loading, error, onSelectCourse }) {
   return (
     <div className="screen">
       <main className="screen-main screen-main--wide">

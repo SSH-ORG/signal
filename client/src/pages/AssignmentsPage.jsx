@@ -27,7 +27,7 @@ function AssignmentsPage({ courseId, gcAssignments, imported, onBack, onSelectAs
         </div>
 
         {assignments.length === 0 ? (
-          <p className="empty-state">No assignments in this class.</p>
+          <p className="empty-state">No coursework made for this class yet.</p>
         ) : (
           <ul className="item-list">
             {assignments.map((assignment) => {

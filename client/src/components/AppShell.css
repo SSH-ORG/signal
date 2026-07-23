@@ -1,4 +1,5 @@
 .app-shell {
+  --topbar-height: 65px;
   display: flex;
   flex-direction: column;
   min-height: 100svh;
@@ -17,11 +18,18 @@
   flex-direction: column;
 }
 
+/* Reserves space for the fixed sidebar so content doesn't render underneath it */
+.app-body--sidebar-open .app-shell-content {
+  margin-left: 200px;
+}
+
 .app-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 32px;
+  height: var(--topbar-height);
+  padding: 0 32px;
+  box-sizing: border-box;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   position: sticky;
@@ -39,6 +47,15 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.app-logo-btn {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
 }
 
 .app-icon-btn {
@@ -66,7 +83,13 @@
     flex-direction: column;
   }
 
+  /* Sidebar reverts to a static row in the mobile layout (see Sidebar.css),
+     so there's no fixed-position space to reserve here anymore. */
+  .app-body--sidebar-open .app-shell-content {
+    margin-left: 0;
+  }
+
   .app-topbar {
-    padding: 12px 16px;
+    padding: 0 16px;
   }
 }

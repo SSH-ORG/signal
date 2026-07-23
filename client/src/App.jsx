@@ -16,6 +16,7 @@ function App() {
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true) // Prevents flash of wrong page on load
 
+  const [gcCourses, setGcCourses] = useState([])         // Every active Google Classroom course, even ones with no assignments
   const [gcAssignments, setGcAssignments] = useState([]) // Live from Google Classroom (flat list)
   const [imported, setImported] = useState([])           // Stored in our database
   const [dataLoading, setDataLoading] = useState(true)
@@ -46,7 +47,8 @@ function App() {
           getGoogleCoursework(),
           getImportedCoursework(),
         ])
-        setGcAssignments(gc)
+        setGcCourses(gc.courses)
+        setGcAssignments(gc.coursework)
         setImported(imp)
       } catch {
         setDataError('Failed to load assignments. Make sure the server is running.')
@@ -181,7 +183,7 @@ function App() {
   } else {
     page = (
       <CoursesPage
-        gcAssignments={gcAssignments}
+        courses={gcCourses}
         loading={dataLoading}
         error={dataError}
         onSelectCourse={handleSelectCourse}
