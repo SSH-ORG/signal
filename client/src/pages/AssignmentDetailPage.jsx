@@ -65,6 +65,8 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
   const [generatingIndividual, setGeneratingIndividual] = useState(null) // submission_id currently generating
   const [generatingAll, setGeneratingAll] = useState(false)
   const [generateProgress, setGenerateProgress] = useState({ done: 0, total: 0 })
+  // submission_id of the student whose report is open in the popup, or null
+  const [openReportId, setOpenReportId] = useState(null)
 
   const courseworkId = record?.coursework_id
 
@@ -82,6 +84,16 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
     if (!courseworkId || reportMode !== 'individual') return
     getSubmissions(courseworkId).then(setSubmissions).catch(() => {})
   }, [courseworkId, reportMode])
+
+  // Closes the individual report popup on Escape
+  useEffect(() => {
+    if (!openReportId) return
+    function handleKeyDown(e) {
+      if (e.key === 'Escape') setOpenReportId(null)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [openReportId])
 
   // Mental model, description, and rubric are edited separately but combined
   // into one labeled string for the AI — the report only reads a single context
@@ -487,15 +499,25 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                         )}
                       </div>
 
-                      {submissions.map((sub, i) => {
-                        const flagLevel = getFlagLevel(sub.individual_report)
-                        return (
-                          <div
-                            key={sub.submission_id}
-                            className={`individual-card${flagLevel && flagLevel !== 'on-track' ? ' individual-card--flagged' : ''}`}
-                          >
-                            <div className="individual-card-header">
-                              <span className="individual-label">{sub.student_name || `Student ${i + 1}`}</span>
+                      {submissions
+                        .map((sub, i) => ({ ...sub, _displayName: sub.student_name || `Student ${i + 1}` }))
+                        .sort((a, b) => a._displayName.localeCompare(b._displayName))
+                        .map((sub) => {
+                          const flagLevel = getFlagLevel(sub.individual_report)
+                          return (
+                            <div
+                              key={sub.submission_id}
+                              className={`individual-row${flagLevel && flagLevel !== 'on-track' ? ' individual-row--flagged' : ''}`}
+                            >
+                              <button
+                                type="button"
+                                className="individual-name-btn"
+                                onClick={() => setOpenReportId(sub.submission_id)}
+                                disabled={!sub.individual_report}
+                                title={sub.individual_report ? 'View report' : 'Generate a report to view it'}
+                              >
+                                {sub._displayName}
+                              </button>
                               {flagLevel && (
                                 <span className={`flag-badge flag-badge--${flagLevel}`}>
                                   {flagLevel === 'misconception' && 'Misconception'}
@@ -517,19 +539,8 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                                   : 'Generate'}
                               </button>
                             </div>
-                            <p className="individual-preview">
-                              {sub.content.length > 120
-                                ? sub.content.slice(0, 120) + '…'
-                                : sub.content}
-                            </p>
-                            {sub.individual_report && (
-                              <div className="individual-report-body">
-                                <ReportBody content={sub.individual_report} />
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
+                          )
+                        })}
                     </>
                   )
                 })()}
@@ -537,6 +548,40 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
             )}
           </section>
         )}
+
+        {/* Individual report popup — opened by clicking a student's name above */}
+        {openReportId && (() => {
+          const sub = submissions.find((s) => s.submission_id === openReportId)
+          if (!sub || !sub.individual_report) return null
+          const idx = submissions.indexOf(sub)
+          const displayName = sub.student_name || `Student ${idx + 1}`
+          return (
+            <div className="modal-backdrop" onClick={() => setOpenReportId(null)}>
+              <div
+                className="modal-card modal-card--report"
+                role="dialog"
+                aria-modal="true"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  className="modal-close"
+                  type="button"
+                  aria-label="Close"
+                  onClick={() => setOpenReportId(null)}
+                >
+                  <Icon name="close" />
+                </button>
+                <h2 className="modal-title">{displayName}</h2>
+                <p className="individual-preview">
+                  {sub.content.length > 200 ? sub.content.slice(0, 200) + '…' : sub.content}
+                </p>
+                <div className="individual-report-body">
+                  <ReportBody content={sub.individual_report} />
+                </div>
+              </div>
+            </div>
+          )
+        })()}
       </main>
     </div>
   )
