@@ -36,9 +36,11 @@ function App() {
       .finally(() => setAuthLoading(false))
   }, [])
 
-  // Once logged in, load both the live Classroom data and what's already imported
+  // Load live Classroom data and imported assignments on login and every time
+  // the teacher navigates back to the Classes screen — this way new classes or
+  // assignments added in Google Classroom appear without a full page refresh
   useEffect(() => {
-    if (!user) return
+    if (!user || screen !== 'courses') return
 
     async function load() {
       setDataLoading(true)
@@ -57,7 +59,7 @@ function App() {
       }
     }
     load()
-  }, [user])
+  }, [user, screen])
 
   // Don't render anything until we know the auth state
   if (authLoading) return null
