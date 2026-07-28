@@ -15,6 +15,7 @@ function AuthPage() {
   // null while unknown, then true/false once we've checked whether a demo
   // video file has actually been dropped in client/public/demo.mp4
   const [videoAvailable, setVideoAvailable] = useState(null)
+  const [showStudentModal, setShowStudentModal] = useState(false)
 
   useEffect(() => {
     fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/health`)
@@ -32,11 +33,22 @@ function AuthPage() {
     <div className="landing">
       <nav className="landing-nav">
         <Logo size="small" />
-        <button className="google-button google-button--nav" type="button" onClick={redirectToGoogleLogin}>
-          <GoogleIcon />
-          Sign in
-        </button>
+        <div className="landing-nav-actions">
+          <button
+            className="landing-nav-link"
+            type="button"
+            onClick={() => setShowStudentModal(true)}
+          >
+            For students
+          </button>
+          <button className="google-button google-button--nav" type="button" onClick={redirectToGoogleLogin}>
+            <GoogleIcon />
+            Sign in
+          </button>
+        </div>
       </nav>
+
+      {showStudentModal && <StudentModal onClose={() => setShowStudentModal(false)} />}
 
       <header className="landing-hero">
         <ParticleBackground />
@@ -137,6 +149,37 @@ function Reveal({ children, className = '' }) {
     <section ref={ref} className={`reveal ${visible ? 'reveal--visible' : ''} ${className}`}>
       {children}
     </section>
+  )
+}
+
+// Shown when a student clicks "For students" on the landing page — Signal is
+// teacher-facing only today, so this just sets expectations and points them
+// back to their teacher instead of leading to a dead end.
+function StudentModal({ onClose }) {
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close" type="button" aria-label="Close" onClick={onClose}>
+          <Icon name="close" />
+        </button>
+        <h2 className="modal-title">Coming soon</h2>
+        <p className="modal-text">
+          Signal doesn't have student sign-in yet — it's built for teachers right now.
+        </p>
+        <p className="modal-text">
+          Want to know how you did, or need help with something? Ask your teacher —
+          if they use Signal, they already have that insight into your work.
+        </p>
+      </div>
+    </div>
   )
 }
 
