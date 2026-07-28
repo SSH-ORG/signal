@@ -18,3 +18,5 @@ class User(Base):
     display_name = Column(Text)
     email = Column(Text)
     email_notifications_enabled = Column(Boolean, nullable=False, server_default="false")
+    # immediate | daily | weekly | immediate_weekly | off
+    notification_preference = Column(Text, nullable=False, server_default="immediate")

@@ -128,6 +128,12 @@ EDGE CASE RULES — follow strictly no matter what:
   Students and Common Misconceptions both say none
 - If only 1 student is struggling → do not call it a "common" misconception, still list them
   individually under their own **Misconception:** block
+- SINGLE STUDENT RULE: if there is only 1 submission total, never say "the class" or "most students"
+  or imply a group — refer only to "the student" and reflect their actual performance accurately.
+  If that one student was flagged, the Class Overview must say so clearly, not claim understanding
+- ACCURACY RULE: the Class Overview must match the actual data — if every student (or the only
+  student) is flagged, the overview cannot say the class understood the assignment. It must
+  honestly reflect what happened
 - Never make up student names or invent submissions
 - Never give generic feedback — always tie it to actual submission content
 - Never grade or mention rubric scoring — this report does not grade submissions

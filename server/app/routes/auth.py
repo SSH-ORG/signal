@@ -17,6 +17,7 @@ class ProfileUpdateRequest(BaseModel):
     display_name: str | None = None
     email: str | None = None
     email_notifications_enabled: bool | None = None
+    notification_preference: str | None = None  # immediate | daily | weekly | immediate_weekly | off
 
 
 # Redirects teacher to Google login page
@@ -51,7 +52,8 @@ async def update_profile(
     db: Session = Depends(get_db),
 ):
     return await auth_controller.update_profile(
-        body.display_name, body.email, body.email_notifications_enabled, user, db
+        body.display_name, body.email, body.email_notifications_enabled,
+        body.notification_preference, user, db,
     )
 
 

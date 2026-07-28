@@ -16,7 +16,7 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
 
   const [theme, setThemeState] = useState(getTheme)
 
-  const [notificationsEnabled, setNotificationsEnabled] = useState(user.email_notifications_enabled)
+  const [notificationPref, setNotificationPref] = useState(user.notification_preference || 'immediate')
   const [savingNotifications, setSavingNotifications] = useState(false)
 
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -39,21 +39,20 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
     }
   }
 
-  // Toggle is optimistic — flips immediately, reverts if the save fails
   function handleSetTheme(t) {
     setTheme(t)
     setThemeState(t)
   }
 
-  async function handleToggleNotifications() {
-    const next = !notificationsEnabled
-    setNotificationsEnabled(next)
+  async function handleSetNotificationPref(pref) {
+    const prev = notificationPref
+    setNotificationPref(pref)
     setSavingNotifications(true)
     try {
-      const updated = await updateProfile({ email_notifications_enabled: next })
+      const updated = await updateProfile({ notification_preference: pref })
       onProfileUpdated(updated)
     } catch {
-      setNotificationsEnabled(!next)
+      setNotificationPref(prev)
     } finally {
       setSavingNotifications(false)
     }
@@ -119,23 +118,28 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
           </form>
         </section>
 
-        <section className="detail-section">
+        <section className="detail-section" id="notifications">
           <h2 className="detail-section-title">Notifications</h2>
-          <div className="account-toggle-row">
-            <div>
-              <p className="account-toggle-label">Allow email notifications</p>
-              <p className="detail-section-hint">Receive an email with a weekly summary of all your reports.</p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={notificationsEnabled}
-              className={`account-toggle${notificationsEnabled ? ' account-toggle--on' : ''}`}
-              onClick={handleToggleNotifications}
-              disabled={savingNotifications}
-            >
-              <span className="account-toggle-knob" />
-            </button>
+          <p className="detail-section-hint">Choose when Signal emails you a report summary.</p>
+          <div className="account-notif-options">
+            {[
+              { value: 'immediate',       label: 'Immediate',         hint: 'Email as soon as each report finishes generating' },
+              { value: 'daily',           label: 'Daily digest',      hint: 'One email every day at 7am with all reports from the past 24 hours' },
+              { value: 'weekly',          label: 'Weekly digest',     hint: 'One email every Monday at 7am with the past week\'s reports' },
+              { value: 'immediate_weekly',label: 'Immediate + Weekly', hint: 'Real-time emails AND a Monday digest' },
+              { value: 'off',             label: 'Off',               hint: 'No emails' },
+            ].map(({ value, label, hint }) => (
+              <button
+                key={value}
+                type="button"
+                className={`account-notif-option${notificationPref === value ? ' account-notif-option--active' : ''}`}
+                onClick={() => handleSetNotificationPref(value)}
+                disabled={savingNotifications}
+              >
+                <span className="account-notif-label">{label}</span>
+                <span className="account-notif-hint">{hint}</span>
+              </button>
+            ))}
           </div>
         </section>
 

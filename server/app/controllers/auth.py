@@ -101,6 +101,7 @@ def _serialize_user(user: User) -> dict:
         "display_name": user.display_name,
         "email": user.email,
         "email_notifications_enabled": user.email_notifications_enabled,
+        "notification_preference": user.notification_preference or "immediate",
     }
 
 
@@ -121,13 +122,24 @@ async def get_me(request: Request, db: Session):
 
 
 # Updates editable profile fields — only the fields the teacher actually sent are changed
-async def update_profile(display_name: str | None, email: str | None, email_notifications_enabled: bool | None, user: User, db: Session):
+VALID_PREFERENCES = {"immediate", "daily", "weekly", "immediate_weekly", "off"}
+
+async def update_profile(
+    display_name: str | None,
+    email: str | None,
+    email_notifications_enabled: bool | None,
+    notification_preference: str | None,
+    user: User,
+    db: Session,
+):
     if display_name is not None:
         user.display_name = display_name
     if email is not None:
         user.email = email
     if email_notifications_enabled is not None:
         user.email_notifications_enabled = email_notifications_enabled
+    if notification_preference is not None and notification_preference in VALID_PREFERENCES:
+        user.notification_preference = notification_preference
 
     db.commit()
     db.refresh(user)
