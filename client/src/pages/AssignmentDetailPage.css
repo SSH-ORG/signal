@@ -428,27 +428,43 @@
   gap: 16px;
 }
 
-.individual-card {
+/* Compact row per student — click the name to open the full report in a popup
+   instead of every report rendering inline (which made the page scroll forever
+   once a class had reports for every student). */
+.individual-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 16px;
   background: var(--surface);
 }
 
-.individual-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
+.individual-name-btn {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-h);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
 }
 
-.individual-label {
-  font-size: 0.8rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.individual-name-btn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.individual-name-btn:disabled {
   color: var(--text);
+  cursor: default;
 }
 
 .individual-preview {
@@ -477,9 +493,17 @@
   flex-wrap: wrap;
 }
 
-/* Red left border on cards where the AI detected an issue */
-.individual-card--flagged {
+/* Red left border on rows where the AI detected an issue */
+.individual-row--flagged {
   border-left: 3px solid var(--error, #d93025);
+}
+
+/* The individual report popup needs more room and its own scroll than the
+   "For students" modal it shares .modal-card/.modal-backdrop styling with. */
+.modal-card--report {
+  max-width: 640px;
+  max-height: 80vh;
+  overflow-y: auto;
 }
 
 /* Counts how many students are flagged across the class */
