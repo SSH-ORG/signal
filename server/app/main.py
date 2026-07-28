@@ -1,17 +1,29 @@
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
 
 from app.routes import auth, google, coursework, report, reports_list
+from app.scheduler import start_scheduler, stop_scheduler
 
 # Load environment variables from .env file
 load_dotenv()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start the background sync job when the server boots
+    await start_scheduler()
+    yield
+    # Shut it down cleanly when the server stops
+    stop_scheduler()
+
+
 # redirect_slashes=False prevents FastAPI from redirecting /route to /route/
 # That redirect breaks CORS because the browser doesn't send credentials on redirects
-app = FastAPI(redirect_slashes=False)
+app = FastAPI(redirect_slashes=False, lifespan=lifespan)
 
 # Session middleware — stores a signed cookie in the browser so we know who's logged in
 # The SESSION_SECRET is used to sign the cookie so it can't be tampered with

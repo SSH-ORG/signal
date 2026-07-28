@@ -270,12 +270,13 @@ async def import_google_coursework(
             # Assignment already exists — skip creating it, just sync new submissions below
             # Context is never touched here — use PATCH /api/coursework/{id} to edit it
             coursework = existing
-            # Backfills course_name for rows created before it was passed in (e.g. the
-            # frontend bug that dropped it on sync) — only overwrites when a real name
-            # comes in, so rows for classes archived since import keep their last-known name
+            # Backfills course_name and google_course_id for rows created before these
+            # columns were added — only overwrites when a real value comes in
             if course_name and coursework.course_name != course_name:
                 coursework.course_name = course_name
-                db.commit()
+            if course_id and not coursework.google_course_id:
+                coursework.google_course_id = course_id
+            db.commit()
         else:
             # First time importing — fetch assignment details and create a record
             cw_resp = await _get_with_refresh(
@@ -296,7 +297,8 @@ async def import_google_coursework(
                 context=context if context is not None else cw_data.get("description", "") or "",
                 user_id=user.user_id,
                 google_coursework_id=google_coursework_id,
-                course_name=course_name,  # Stored so it's available even if the course is later archived
+                google_course_id=course_id,  # Stored so the background job can re-sync without a teacher being present
+                course_name=course_name,      # Stored so it's available even if the course is later archived
             )
             db.add(coursework)
             db.commit()
