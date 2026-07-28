@@ -8,6 +8,7 @@ from app.models.submission import Submission
 from app.models.report import Report
 from app.controllers.google import import_google_coursework, fetch_google_coursework
 from app.controllers.report import generate_individual_report, generate_report
+from app.jobs.email import send_immediate_email
 
 
 async def sync_submissions_and_reports() -> None:
@@ -120,6 +121,11 @@ async def _sync_user(user: User, db: Session) -> None:
         try:
             generate_report(coursework_id=cw.coursework_id, user=user, db=db)
             print(f"[sync job] Generated class-wide report for '{cw.title}' ({cw.course_name})")
+            # Fire an immediate email if the teacher wants one
+            pref = user.notification_preference or "immediate"
+            if pref in ("immediate", "immediate_weekly"):
+                db.refresh(cw)  # Load the freshly generated report
+                await send_immediate_email(user, cw, db)
         except HTTPException as e:
             print(f"[sync job] HTTP error generating class-wide report for coursework_id={cw.coursework_id}: {e.detail}")
         except Exception as e:
