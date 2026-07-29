@@ -5,9 +5,10 @@
 }
 
 .report-section {
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
+  box-shadow: var(--shadow-sm);
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -42,9 +43,10 @@
 /* ── Class Overview box ── */
 
 .overview-box {
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
+  box-shadow: var(--shadow-sm);
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -89,9 +91,10 @@
 }
 
 .report-card {
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
+  box-shadow: var(--shadow-sm);
   padding: 16px;
   display: flex;
   flex-direction: column;
