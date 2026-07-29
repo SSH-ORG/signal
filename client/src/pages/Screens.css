@@ -97,9 +97,10 @@
   justify-content: space-between;
   gap: 12px;
   padding: 14px 16px;
-  background: transparent;
-  border: 1px solid var(--border);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
   font: inherit;
   text-align: left;
@@ -163,6 +164,7 @@
 }
 
 .course-card {
+  position: relative; /* anchors the color-edit button and its popup */
   display: flex;
   flex-direction: column;
   background: var(--surface);
@@ -174,7 +176,59 @@
 
 .course-card:hover {
   transform: translateY(-2px);
-  border-color: var(--accent-border);
+  border-color: var(--course-color, var(--accent-border));
+}
+
+/* Small pencil button on each card's banner — opens the color picker below */
+.course-color-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.28);
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.course-color-btn:hover {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.course-color-icon {
+  font-size: 15px;
+}
+
+.color-picker {
+  position: absolute;
+  top: 44px;
+  right: 12px;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
 }
 
 .course-card-main {

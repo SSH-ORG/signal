@@ -71,8 +71,9 @@
   flex-direction: column;
   gap: 12px;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 12px;
+  box-shadow: var(--shadow-sm);
   padding: 24px;
 }
 
@@ -397,8 +398,9 @@
   gap: 4px;
   padding: 4px;
   background: var(--bg);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
+  box-shadow: var(--shadow-sm);
   width: fit-content;
   margin-bottom: 20px;
 }
@@ -436,9 +438,10 @@
   align-items: center;
   gap: 12px;
   padding: 10px 16px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
   background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .individual-name-btn {
