@@ -101,7 +101,7 @@ def _serialize_user(user: User) -> dict:
         "display_name": user.display_name,
         "email": user.email,
         "email_notifications_enabled": user.email_notifications_enabled,
-        "notification_preference": user.notification_preference or "immediate",
+        "notification_preference": user.notification_preference or "daily",
     }
 
 
@@ -122,7 +122,7 @@ async def get_me(request: Request, db: Session):
 
 
 # Updates editable profile fields — only the fields the teacher actually sent are changed
-VALID_PREFERENCES = {"immediate", "daily", "weekly", "immediate_weekly", "off"}
+VALID_PREFERENCES = {"daily", "weekly"}
 
 async def update_profile(
     display_name: str | None,

@@ -1,13 +1,17 @@
 import asyncio
 from datetime import datetime, date
 
-from app.jobs.sync import sync_submissions_and_reports
 from app.jobs.email import send_digest
 from app.database import SessionLocal
 from app.models.user import User
 
 _task: asyncio.Task | None = None
-SYNC_INTERVAL_SECONDS = 30
+# No longer syncing Classroom data here — syncing now happens on demand (see
+# fetch_google_coursework/sync_course_coursework), and report generation is a
+# deliberate teacher action (the Build button), never automatic. This loop
+# only exists to check the digest-email schedule, so it doesn't need to tick
+# every few seconds — checking every 30 minutes still reliably catches 7am UTC.
+SCHEDULER_TICK_SECONDS = 1800
 
 # Track last send dates so we only fire each digest once per day/week even if
 # the loop ticks many times in the same hour
@@ -17,13 +21,7 @@ _last_weekly_date: date | None = None
 
 async def _run_periodic() -> None:
     global _last_daily_date, _last_weekly_date
-    print("[scheduler] First sync starting now...")
     while True:
-        try:
-            await sync_submissions_and_reports()
-        except Exception as e:
-            print(f"[scheduler] Unexpected error in sync job: {e}")
-
         now = datetime.utcnow()
         today = now.date()
 
@@ -35,10 +33,9 @@ async def _run_periodic() -> None:
         # Weekly digest — every Monday at 7am UTC
         if now.hour == 7 and now.weekday() == 0 and today != _last_weekly_date:
             _last_weekly_date = today
-            await _send_digests(window_hours=24 * 7, pref_values=("weekly", "immediate_weekly"))
+            await _send_digests(window_hours=24 * 7, pref_values=("weekly",))
 
-        print(f"[scheduler] Next sync in {SYNC_INTERVAL_SECONDS}s")
-        await asyncio.sleep(SYNC_INTERVAL_SECONDS)
+        await asyncio.sleep(SCHEDULER_TICK_SECONDS)
 
 
 async def _send_digests(window_hours: int, pref_values: tuple) -> None:
@@ -47,6 +44,7 @@ async def _send_digests(window_hours: int, pref_values: tuple) -> None:
     try:
         users = (
             db.query(User)
+            .filter(User.email_notifications_enabled.is_(True))
             .filter(User.notification_preference.in_(pref_values))
             .all()
         )
@@ -63,7 +61,7 @@ async def _send_digests(window_hours: int, pref_values: tuple) -> None:
 async def start_scheduler() -> None:
     global _task
     _task = asyncio.create_task(_run_periodic())
-    print(f"[scheduler] Started — syncing every {SYNC_INTERVAL_SECONDS}s")
+    print(f"[scheduler] Started — checking digest schedule every {SCHEDULER_TICK_SECONDS}s")
 
 
 def stop_scheduler() -> None:

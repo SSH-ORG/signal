@@ -193,6 +193,35 @@ def _class_section_html(coursework, server_url: str) -> str:
 </div>"""
 
 
+# Assignments whose due date has passed but have no class-wide report yet —
+# a nudge to go build (or, if context is still missing, add context first)
+def _ready_to_build_html(coursework_list) -> str:
+    if not coursework_list:
+        return ""
+    rows = "".join(
+        f"""
+<tr>
+  <td style="padding:10px 0;border-bottom:1px solid #f4f4f4;">
+    <strong style="font-size:14px;color:#111;">{cw.title}</strong>
+    <p style="margin:2px 0 0;font-size:12px;color:#888;">{cw.course_name or 'Class'}</p>
+  </td>
+</tr>"""
+        for cw in coursework_list
+    )
+    count = len(coursework_list)
+    return f"""
+<div style="margin-bottom:20px;border:1px solid #e8e8e8;border-radius:10px;overflow:hidden;">
+  <div style="background:#f8f9fa;padding:14px 18px;border-bottom:1px solid #e8e8e8;">
+    <p style="margin:0;font-size:13px;font-weight:700;color:#111;">
+      Ready to build — {count} assignment{'s' if count != 1 else ''}
+    </p>
+  </div>
+  <div style="padding:4px 18px;">
+    <table width="100%" cellpadding="0" cellspacing="0">{rows}</table>
+  </div>
+</div>"""
+
+
 def _full_email_html(
     digest_title: str,
     date_str: str,
@@ -202,29 +231,25 @@ def _full_email_html(
     total_on_track: int,
     class_sections: str,
     frontend_url: str,
+    ready_to_build_html: str = "",
+    ready_to_build_count: int = 0,
 ) -> str:
     classes_label = f"{classes_count} class{'es' if classes_count != 1 else ''}"
-    attention_label = (
-        f"{total_flagged} student{'s' if total_flagged != 1 else ''} "
-        f"{'need' if total_flagged != 1 else 'needs'} attention"
-    )
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#f0f0f0;
-             font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-  <div style="max-width:640px;margin:32px auto;padding:0 16px 32px;">
+    meta_parts = [date_str, classes_label]
+    if total_students > 0:
+        meta_parts.append(
+            f"{total_flagged} student{'s' if total_flagged != 1 else ''} "
+            f"{'need' if total_flagged != 1 else 'needs'} attention"
+        )
+    elif ready_to_build_count > 0:
+        meta_parts.append(
+            f"{ready_to_build_count} assignment{'s' if ready_to_build_count != 1 else ''} ready to build"
+        )
+    meta_line = " &nbsp;&middot;&nbsp; ".join(meta_parts)
 
-    <!-- Header -->
-    <div style="background:#111;border-radius:10px 10px 0 0;padding:24px 28px;">
-      <p style="font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
-                color:#666;margin:0 0 8px;">Signal</p>
-      <h1 style="font-size:20px;font-weight:700;color:#fff;margin:0 0 6px;">{digest_title}</h1>
-      <p style="font-size:13px;color:#aaa;margin:0;">
-        {date_str} &nbsp;&middot;&nbsp; {classes_label} &nbsp;&middot;&nbsp; {attention_label}
-      </p>
-    </div>
-
+    stats_bar_html = ""
+    if total_students > 0:
+        stats_bar_html = f"""
     <!-- Stats bar -->
     <div style="background:#fff;border-left:1px solid #e8e8e8;border-right:1px solid #e8e8e8;">
       <table width="100%" cellpadding="0" cellspacing="0">
@@ -246,11 +271,30 @@ def _full_email_html(
           </td>
         </tr>
       </table>
+    </div>"""
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f0f0f0;
+             font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <div style="max-width:640px;margin:32px auto;padding:0 16px 32px;">
+
+    <!-- Header -->
+    <div style="background:#111;border-radius:10px 10px 0 0;padding:24px 28px;">
+      <p style="font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
+                color:#666;margin:0 0 8px;">Signal</p>
+      <h1 style="font-size:20px;font-weight:700;color:#fff;margin:0 0 6px;">{digest_title}</h1>
+      <p style="font-size:13px;color:#aaa;margin:0;">
+        {meta_line}
+      </p>
     </div>
+    {stats_bar_html}
 
     <!-- Class sections -->
     <div style="background:#fff;border:1px solid #e8e8e8;border-top:none;
                 border-radius:0 0 10px 10px;padding:24px 28px;">
+      {ready_to_build_html}
       {class_sections}
     </div>
 
@@ -281,7 +325,8 @@ async def send_digest(user: User, db: Session, window_hours: int) -> bool:
 
     server_url = os.getenv("SERVER_URL", "http://localhost:8000")
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
-    cutoff = datetime.utcnow() - timedelta(hours=window_hours)
+    now = datetime.utcnow()
+    cutoff = now - timedelta(hours=window_hours)
 
     # Only include assignments whose class-wide report was generated in the window
     coursework_list = (
@@ -294,13 +339,25 @@ async def send_digest(user: User, db: Session, window_hours: int) -> bool:
         .all()
     )
 
-    if not coursework_list:
-        print(f"[email] No reports in window for user_id={user.user_id} — skipping")
+    # Assignments whose due date fell within the window but still have no report —
+    # the "ready to build" nudge
+    ready_to_build = (
+        db.query(Coursework)
+        .filter(
+            Coursework.user_id == user.user_id,
+            Coursework.due_date.isnot(None),
+            Coursework.due_date <= now,
+            Coursework.due_date >= cutoff,
+        )
+        .filter(~Coursework.report.has())
+        .all()
+    )
+
+    if not coursework_list and not ready_to_build:
+        print(f"[email] Nothing to report for user_id={user.user_id} — skipping")
         return False
 
     total_students = sum(len(cw.submissions) for cw in coursework_list)
-    if total_students == 0:
-        return False
 
     total_flagged = sum(
         1 for cw in coursework_list for s in cw.submissions
@@ -309,6 +366,8 @@ async def send_digest(user: User, db: Session, window_hours: int) -> bool:
     total_on_track = total_students - total_flagged
 
     class_sections = "".join(_class_section_html(cw, server_url) for cw in coursework_list)
+    ready_to_build_html = _ready_to_build_html(ready_to_build)
+    classes_count = len({cw.coursework_id for cw in coursework_list} | {cw.coursework_id for cw in ready_to_build})
 
     today = datetime.utcnow().strftime("%-d %B %Y")
     if window_hours <= 24:
@@ -321,12 +380,14 @@ async def send_digest(user: User, db: Session, window_hours: int) -> bool:
     html = _full_email_html(
         digest_title=digest_title,
         date_str=today,
-        classes_count=len(coursework_list),
+        classes_count=classes_count,
         total_students=total_students,
         total_flagged=total_flagged,
         total_on_track=total_on_track,
         class_sections=class_sections,
         frontend_url=frontend_url,
+        ready_to_build_html=ready_to_build_html,
+        ready_to_build_count=len(ready_to_build),
     )
 
     async with httpx.AsyncClient() as client:
@@ -347,59 +408,4 @@ async def send_digest(user: User, db: Session, window_hours: int) -> bool:
         return False
 
     print(f"[email] {'Daily' if window_hours <= 24 else 'Weekly'} digest sent to {user.email}")
-    return True
-
-
-async def send_immediate_email(user: User, coursework, db: Session) -> bool:
-    """Send an immediate report-ready email when a class-wide report finishes."""
-    if not user.email:
-        return False
-
-    api_key = os.getenv("RESEND_API_KEY")
-    if not api_key:
-        return False
-
-    server_url = os.getenv("SERVER_URL", "http://localhost:8000")
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
-
-    subs = coursework.submissions
-    total_students = len(subs)
-    total_flagged = sum(
-        1 for s in subs
-        if get_flag_level(s.individual_report) not in ("on-track", None) and not s.resolved
-    )
-    total_on_track = total_students - total_flagged
-
-    class_section = _class_section_html(coursework, server_url)
-    today = datetime.utcnow().strftime("%-d %B %Y")
-
-    html = _full_email_html(
-        digest_title="Report Ready",
-        date_str=today,
-        classes_count=1,
-        total_students=total_students,
-        total_flagged=total_flagged,
-        total_on_track=total_on_track,
-        class_sections=class_section,
-        frontend_url=frontend_url,
-    )
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            RESEND_API_URL,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "from": "Signal <signal@marcylab.us>",
-                "to": [user.email],
-                "subject": f"Signal report ready — {coursework.title}",
-                "html": html,
-            },
-            timeout=15.0,
-        )
-
-    if resp.status_code not in (200, 201):
-        print(f"[email] Resend error (immediate) for user_id={user.user_id}: {resp.text}")
-        return False
-
-    print(f"[email] Immediate email sent to {user.email} for '{coursework.title}'")
     return True

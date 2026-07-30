@@ -66,22 +66,70 @@
   color: var(--accent);
 }
 
+/* ── Notification master toggle ───────────────────────── */
+.account-notif-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.account-toggle {
+  flex-shrink: 0;
+  width: 44px;
+  height: 26px;
+  padding: 3px;
+  border-radius: 100px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.account-toggle--on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.account-toggle-knob {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s;
+}
+
+.account-toggle--on .account-toggle-knob {
+  transform: translateX(18px);
+}
+
+.account-toggle:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* ── Notification preference selector ────────────────── */
 .account-notif-options {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 16px;
 }
 
 .account-notif-option {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  width: 100%;
+  align-items: center;
+  gap: 6px;
+  width: 320px;
+  max-width: 100%;
   padding: 12px 14px;
   font: inherit;
-  text-align: left;
+  text-align: center;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -89,7 +137,7 @@
   transition: border-color 0.15s, background 0.15s;
 }
 
-.account-notif-option:hover:not(:disabled) {
+.account-notif-option:has(input:hover:not(:disabled)) {
   border-color: var(--accent-border);
 }
 
@@ -98,12 +146,17 @@
   border-color: var(--accent);
 }
 
-.account-notif-option:disabled {
+.account-notif-option:has(input:disabled) {
   opacity: 0.6;
   cursor: default;
 }
 
+.account-notif-radio {
+  cursor: pointer;
+}
+
 .account-notif-label {
+  display: block;
   font-size: 0.88rem;
   font-weight: 600;
   color: var(--text-h);

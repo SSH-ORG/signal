@@ -2,9 +2,9 @@
 // come from whatever CSS class wraps it — font-size and currentColor apply
 // the same way they would to text. Used for every icon in the app except
 // Google's official "G" mark, which stays as inlined brand SVG.
-function Icon({ name, className = '' }) {
+function Icon({ name, className = '', style }) {
   return (
-    <span className={`material-symbols-outlined ${className}`.trim()} aria-hidden="true">
+    <span className={`material-symbols-outlined ${className}`.trim()} style={style} aria-hidden="true">
       {name}
     </span>
   )

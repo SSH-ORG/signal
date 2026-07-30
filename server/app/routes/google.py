@@ -17,6 +17,13 @@ class ImportRequest(BaseModel):
     course_id: str            # The Google Classroom course ID the assignment belongs to
     context: str | None = None  # Teacher-reviewed context/rubric; falls back to the Classroom description if omitted
     course_name: str = ""     # Course name stored so it's available even after a course is archived
+    due_date: str | None = None      # ISO string — pass through when the frontend already has a fresh value
+    student_count: int | None = None  # Roster size — pass through when the frontend already has a fresh value
+
+
+# Request body for the course-sync endpoint
+class SyncCourseRequest(BaseModel):
+    course_name: str = ""     # Stored on each assignment so it's available even after the course is archived
 
 
 # GET /api/google/coursework
@@ -57,4 +64,33 @@ async def import_coursework(
     return await google_controller.import_google_coursework(
         google_coursework_id, body.course_id, user, db,
         context=body.context, course_name=body.course_name,
+        due_date=body.due_date, student_count=body.student_count,
     )
+
+
+# GET /api/google/coursework/{google_coursework_id}/description?course_id=...
+# Fetches the assignment's current description directly from Google Classroom
+# The frontend uses this to let a teacher pull in an edit made in Classroom
+# after the assignment was already synced, via the "Sync Description" button
+@router.get("/coursework/{google_coursework_id}/description")
+async def get_description(
+    google_coursework_id: str,
+    course_id: str,
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    return await google_controller.fetch_assignment_description(google_coursework_id, course_id, user, db)
+
+
+# POST /api/google/courses/{course_id}/sync
+# Syncs every published assignment in one course at once — called automatically
+# when a teacher opens or revisits that course's Coursework screen, so syncing
+# doesn't depend on a manual first click per assignment
+@router.post("/courses/{course_id}/sync")
+async def sync_course(
+    course_id: str,
+    body: SyncCourseRequest,
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    return await google_controller.sync_course_coursework(course_id, body.course_name, user, db)

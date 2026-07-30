@@ -2,12 +2,27 @@
 // if the backend isn't running on the default local port.
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
+// Builds an Error from a failed response, preferring the backend's actual detail
+// message over a generic fallback, and tagging the status code so callers can
+// branch on the failure reason (e.g. expired session vs a Google API failure)
+async function readErrorDetail(response, fallback) {
+  let detail
+  try {
+    detail = (await response.json()).detail
+  } catch {
+    // Body wasn't JSON — use the fallback below
+  }
+  const error = new Error(detail || fallback)
+  error.status = response.status
+  return error
+}
+
 // Fetches all assignments from the teacher's Google Classroom courses (live, not stored)
 export async function getGoogleCoursework() {
   const response = await fetch(`${API_BASE_URL}/api/google/coursework`, {
     credentials: 'include',
   })
-  if (!response.ok) throw new Error('Failed to fetch Google Classroom assignments')
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to fetch Google Classroom courses and assignments')
   return response.json()
 }
 
@@ -25,6 +40,19 @@ export async function importCoursework(googleCourseworkId, courseId, context, co
     const err = await response.json()
     throw new Error(err.detail || 'Failed to import assignment')
   }
+  return response.json()
+}
+
+// Syncs every published assignment in one course at once — called automatically
+// when a teacher opens or revisits that course's Coursework screen
+export async function syncCourse(courseId, courseName = '') {
+  const response = await fetch(`${API_BASE_URL}/api/google/courses/${courseId}/sync`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ course_name: courseName }),
+  })
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to sync course')
   return response.json()
 }
 
@@ -55,12 +83,26 @@ export async function getGCRubric(googleCourseworkId, courseId) {
   return data.rubric_text  // null if no rubric exists
 }
 
-// Returns all assignments the teacher has already imported into Signal
+// Fetches the assignment's current description directly from Google Classroom —
+// a pure read, doesn't touch submissions/roster. Used by "Sync Description" so
+// a teacher can deliberately pull in a live edit instead of it silently
+// overwriting their own custom description.
+export async function getGCDescription(googleCourseworkId, courseId) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/google/coursework/${googleCourseworkId}/description?course_id=${courseId}`,
+    { credentials: 'include' }
+  )
+  if (!response.ok) throw new Error('Failed to fetch description from Google Classroom')
+  const data = await response.json()
+  return data.description
+}
+
+// Returns all assignments the teacher has already synced into Signal
 export async function getImportedCoursework() {
   const response = await fetch(`${API_BASE_URL}/api/coursework/`, {
     credentials: 'include',
   })
-  if (!response.ok) throw new Error('Failed to fetch imported assignments')
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to fetch synced assignments')
   return response.json()
 }
 

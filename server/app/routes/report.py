@@ -1,13 +1,11 @@
 import asyncio
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.middleware.auth import require_login
 from app.models.user import User
-from app.models.coursework import Coursework
 from app.controllers import report as report_controller
-from app.jobs.email import send_immediate_email
 
 # Report routes — mounted at /api/coursework/:id/report in main.py
 router = APIRouter()
@@ -26,21 +24,13 @@ def get_report(
 
 # POST /api/coursework/{coursework_id}/report
 # Sends all submissions to the AI and generates a confusion report
-# Fires an immediate email notification if the teacher's preference is set to immediate
 @router.post("")
 async def create_report(
     coursework_id: int,
-    background_tasks: BackgroundTasks,
     user: User = Depends(require_login),
     db: Session = Depends(get_db),
 ):
-    result = report_controller.generate_report(coursework_id, user, db)
-    pref = user.notification_preference or "immediate"
-    if pref in ("immediate", "immediate_weekly"):
-        cw = db.query(Coursework).filter(Coursework.coursework_id == coursework_id).first()
-        if cw:
-            background_tasks.add_task(send_immediate_email, user, cw, db)
-    return result
+    return report_controller.generate_report(coursework_id, user, db)
 
 
 # POST /api/coursework/{coursework_id}/report/email

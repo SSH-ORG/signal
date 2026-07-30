@@ -17,7 +17,7 @@ class ProfileUpdateRequest(BaseModel):
     display_name: str | None = None
     email: str | None = None
     email_notifications_enabled: bool | None = None
-    notification_preference: str | None = None  # immediate | daily | weekly | immediate_weekly | off
+    notification_preference: str | None = None  # daily | weekly
 
 
 # Redirects teacher to Google login page

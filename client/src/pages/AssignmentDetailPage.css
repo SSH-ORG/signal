@@ -52,6 +52,15 @@
   align-items: start;
 }
 
+/* Wraps the Mental Model box together with its Save Context action, so the
+   button sits directly under that specific box (not spanning both columns)
+   without being visually inside the box's own tinted background/border. */
+.context-column-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 /* Tinted so Mental Model and Reference Materials each read as their own
    zone against the white/dark Context card — a plain background wouldn't
    show any contrast in light mode, since --bg and --surface are identical there. */
@@ -363,6 +372,10 @@
   line-height: 1.6;
 }
 
+.report-empty-text--warning {
+  color: var(--error);
+}
+
 .generate-btn {
   padding: 10px 24px;
   font: inherit;
@@ -430,6 +443,19 @@
   gap: 16px;
 }
 
+/* Flagged-student cards — 2 per row instead of one long column */
+.individual-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 600px) {
+  .individual-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Compact row per student — click the name to open the full report in a popup
    instead of every report rendering inline (which made the page scroll forever
    once a class had reports for every student). */
@@ -442,6 +468,10 @@
   border-radius: 10px;
   background: var(--surface);
   box-shadow: var(--shadow-sm);
+  /* Grid items default to min-width:auto, which lets their content force the
+     grid track wider than the column — this is what caused the 2-column
+     flagged cards to overflow their box */
+  min-width: 0;
 }
 
 .individual-name-btn {
@@ -470,16 +500,56 @@
   cursor: default;
 }
 
-.individual-preview {
-  font-size: 0.875rem;
+/* The whole flagged-student row is itself a button now — resets the
+   default <button> appearance to keep looking like the plain card it was */
+.individual-row--clickable {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.individual-row--clickable:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+.individual-row--clickable:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.individual-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.individual-card-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-h);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Cue that the whole card is clickable, same treatment as the classwide cards'
+   chevron, instead of a "See report" text badge */
+.individual-card-chevron {
+  flex-shrink: 0;
+  font-size: 20px;
+  color: var(--accent);
+  opacity: 0.6;
+}
+
+.individual-card-generating {
+  flex-shrink: 0;
+  font-size: 0.8rem;
   color: var(--text);
-  line-height: 1.5;
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  background: var(--bg);
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  white-space: pre-wrap;
 }
 
 .individual-report-body {
@@ -509,16 +579,6 @@
   overflow-y: auto;
 }
 
-/* Counts how many students are flagged across the class */
-.flag-summary-badge {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--error, #d93025);
-  background: #fff0f0;
-  border: 1px solid #fdd;
-  border-radius: 100px;
-  padding: 3px 10px;
-}
 
 /* .flag-badge and modifier classes moved to Screens.css (shared) */
 

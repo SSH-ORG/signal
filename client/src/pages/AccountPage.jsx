@@ -16,7 +16,8 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
 
   const [theme, setThemeState] = useState(getTheme)
 
-  const [notificationPref, setNotificationPref] = useState(user.notification_preference || 'immediate')
+  const [emailEnabled, setEmailEnabled] = useState(!!user.email_notifications_enabled)
+  const [notificationPref, setNotificationPref] = useState(user.notification_preference || 'daily')
   const [savingNotifications, setSavingNotifications] = useState(false)
 
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -42,6 +43,21 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
   function handleSetTheme(t) {
     setTheme(t)
     setThemeState(t)
+  }
+
+  async function handleToggleEmailEnabled() {
+    const prev = emailEnabled
+    const next = !prev
+    setEmailEnabled(next)
+    setSavingNotifications(true)
+    try {
+      const updated = await updateProfile({ email_notifications_enabled: next })
+      onProfileUpdated(updated)
+    } catch {
+      setEmailEnabled(prev)
+    } finally {
+      setSavingNotifications(false)
+    }
   }
 
   async function handleSetNotificationPref(pref) {
@@ -79,7 +95,7 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
     <div className="screen">
       <main className="screen-main">
         <div>
-          <h1 className="screen-title">Account</h1>
+          <h1 className="screen-title">account</h1>
           <p className="screen-subtitle">manage your profile and preferences</p>
         </div>
 
@@ -119,28 +135,50 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
         </section>
 
         <section className="detail-section" id="notifications">
-          <h2 className="detail-section-title">Notifications</h2>
-          <p className="detail-section-hint">Choose when Signal emails you a report summary.</p>
-          <div className="account-notif-options">
-            {[
-              { value: 'immediate',       label: 'Immediate',         hint: 'Email as soon as each report finishes generating' },
-              { value: 'daily',           label: 'Daily digest',      hint: 'One email every day at 7am with all reports from the past 24 hours' },
-              { value: 'weekly',          label: 'Weekly digest',     hint: 'One email every Monday at 7am with the past week\'s reports' },
-              { value: 'immediate_weekly',label: 'Immediate + Weekly', hint: 'Real-time emails AND a Monday digest' },
-              { value: 'off',             label: 'Off',               hint: 'No emails' },
-            ].map(({ value, label, hint }) => (
-              <button
-                key={value}
-                type="button"
-                className={`account-notif-option${notificationPref === value ? ' account-notif-option--active' : ''}`}
-                onClick={() => handleSetNotificationPref(value)}
-                disabled={savingNotifications}
-              >
-                <span className="account-notif-label">{label}</span>
-                <span className="account-notif-hint">{hint}</span>
-              </button>
-            ))}
+          <h2 className="detail-section-title">Email Notifications</h2>
+          <div className="account-notif-toggle-row">
+            <div>
+              <span className="account-notif-label">Email me a summary</span>
+              <p className="detail-section-hint">Emailed once reports are ready to be built or already are built.</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={emailEnabled}
+              className={`account-toggle${emailEnabled ? ' account-toggle--on' : ''}`}
+              onClick={handleToggleEmailEnabled}
+              disabled={savingNotifications}
+            >
+              <span className="account-toggle-knob" />
+            </button>
           </div>
+
+          {emailEnabled && (
+            <div className="account-notif-options">
+              {[
+                { value: 'daily', label: 'Each day', hint: 'All reports from the past 24 hours' },
+                { value: 'weekly', label: 'Each week', hint: 'All reports from the past week, emailed each Monday' },
+              ].map(({ value, label, hint }) => (
+                <label
+                  key={value}
+                  className={`account-notif-option${notificationPref === value ? ' account-notif-option--active' : ''}`}
+                >
+                  <input
+                    type="radio"
+                    name="notification-cadence"
+                    className="account-notif-radio"
+                    checked={notificationPref === value}
+                    onChange={() => handleSetNotificationPref(value)}
+                    disabled={savingNotifications}
+                  />
+                  <span>
+                    <span className="account-notif-label">{label}</span>
+                    <span className="account-notif-hint">{hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="detail-section">

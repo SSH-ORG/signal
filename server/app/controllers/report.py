@@ -32,13 +32,22 @@ def generate_report(coursework_id: int, user: User, db: Session) -> dict:
     if not coursework.submissions:
         raise HTTPException(status_code=400, detail="No submissions found for this assignment")
 
+    # A report with nothing to compare submissions against is nearly always
+    # shallow and generic — require at least a mental model, description, or
+    # rubric before generating one, instead of silently falling back to "no context"
+    if not coursework.context or not coursework.context.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Add a mental model, description, or rubric before building a report",
+        )
+
     # Format submissions — use real student names when available, number fallback otherwise
     submissions_text = "\n\n".join([
         f"Student: {sub.student_name or f'Student {i + 1}'}\nSubmission: {sub.content}"
         for i, sub in enumerate(coursework.submissions)
     ])
 
-    context_str = coursework.context if coursework.context else "No context provided — analyze submissions based on content only."
+    context_str = coursework.context
 
     prompt = f"""You are an expert educator analyzing student submissions for a virtual classroom.
 
@@ -207,6 +216,7 @@ def get_all_reports(user: User, db: Session) -> list:
             "coursework_id": cw.coursework_id,
             "title": cw.title,
             "google_coursework_id": cw.google_coursework_id,
+            "google_course_id": cw.google_course_id,  # Lets the frontend match this class's custom color from the Courses screen
             "course_name": cw.course_name or "",  # Stored at import time so it's available even for archived courses
             "report_id": cw.report.report_id,
             "created_at": cw.report.created_at,
@@ -215,6 +225,7 @@ def get_all_reports(user: User, db: Session) -> list:
                 1 for s in cw.submissions
                 if s.individual_report and _is_flagged(s.individual_report)
             ),
+            "total_submissions": len(cw.submissions),
         }
         for cw in coursework_list
         if cw.report
@@ -400,9 +411,17 @@ def generate_individual_report(coursework_id: int, submission_id: int, user: Use
     if not submission:
         raise HTTPException(status_code=404, detail="Submission not found")
 
+    # Same requirement as the classwide report — nothing to compare against
+    # means a shallow, generic result, so this isn't allowed to run without it
+    if not coursework.context or not coursework.context.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Add a mental model, description, or rubric before building a report",
+        )
+
     student_label = submission.student_name or f"Student {submission.submission_id}"
     has_rubric = bool(coursework.context and "Rubric:" in coursework.context)
-    context_str = coursework.context if coursework.context else "No context provided — analyze submission based on content only."
+    context_str = coursework.context
 
     # Grade section only appears when a rubric was actually provided
     grade_section = """## 📝 Grade
@@ -477,9 +496,16 @@ If no issues, write: Submission quality is acceptable.
 ---
 
 EDGE CASE RULES — follow strictly:
-- Blank submission → write "Submission was blank — no analysis possible" in Submission Quality, skip all other analysis
+- Blank submission → write "Submission was blank — no analysis possible" in Submission Quality, skip all other sections entirely (write "N/A — no submission to assess" in each rather than leaving them empty)
 - Under 15 words → flag as insufficient unless it directly and correctly answers the question
 - Off-topic or gibberish → flag as insufficient
+- NO REPETITION RULE: whenever Submission Quality flags an issue (too short, off-topic, gibberish,
+  not original), state the reason there ONCE and do not restate or re-explain it in Submission
+  Summary, What They Got Right, or Misconceptions Detected — those sections should stay brief and
+  factual (e.g. "Too little content to summarize" / "Not enough content to evaluate") rather than
+  repeating why, in different words, in multiple places
+- More generally, each section must add information the others haven't already covered — never
+  make the same point twice across sections just to fill space
 - Never make up content or invent what the student wrote
 - Never give generic feedback — tie everything to what was actually in the submission
 {rubric_rule}

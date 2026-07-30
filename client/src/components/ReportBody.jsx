@@ -1,17 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { splitSections, findBody, parseBullets, parseGroups, stripBold } from '../lib/reportParsing'
+import Icon from './Icon'
 import './ReportBody.css'
 
 // Shared AI report renderer — used on AssignmentDetailPage (classwide + individual)
 // and ReportsPage (inline expanded view).
 // mode="classwide" renders the Class Overview box + the 4 section cards
-// (Flagged Students / Common Misconception / Solid Themes / Next Steps) with an
-// accordion detail panel underneath. Any other mode (individual student reports)
-// falls back to the original stacked-sections layout.
+// (Flagged Students / Common Misconception / Solid Themes / Next Steps), each
+// color-coded and opening its full detail in a modal. Any other mode
+// (individual student reports) falls back to the original stacked-sections layout.
 function ReportBody({ content, mode, totalSubmissions }) {
-  const sections = content.split(/(?=##\s)/g).filter(Boolean).map(raw => {
-    const lines = raw.split('\n').filter(Boolean)
-    return { heading: lines[0].replace(/^#+\s*/, '').trim(), body: lines.slice(1).join('\n') }
-  })
+  const sections = splitSections(content)
 
   if (mode === 'classwide') {
     return <ClasswideReportBody sections={sections} totalSubmissions={totalSubmissions} />
@@ -26,42 +25,14 @@ function ReportBody({ content, mode, totalSubmissions }) {
   )
 }
 
-function findBody(sections, heading) {
-  return sections.find(s => s.heading.includes(heading))?.body || ''
-}
-
-// Extracts "- something" bullet lines as plain strings (bold markup left in place)
-function parseBullets(body) {
-  return body
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => /^[-*]\s/.test(line))
-    .map(line => line.replace(/^[-*]\s/, ''))
-}
-
-// Parses "**Label:** description" blocks followed by their bullet students,
-// e.g. Common Misconceptions / Solid Themes groups
-function parseGroups(body, labelWord) {
-  const labelRegex = new RegExp(`^\\*\\*${labelWord}:\\*\\*\\s*`, 'i')
-  const groups = []
-  let current = null
-
-  for (const rawLine of body.split('\n')) {
-    const line = rawLine.trim()
-    if (!line) continue
-    if (labelRegex.test(line)) {
-      if (current) groups.push(current)
-      current = { label: line.replace(labelRegex, ''), students: [] }
-    } else if (/^[-*]\s/.test(line) && current) {
-      current.students.push(line.replace(/^[-*]\s/, ''))
-    }
-  }
-  if (current) groups.push(current)
-  return groups
-}
-
-function stripBold(text) {
-  return (text || '').replace(/\*\*(.+?)\*\*/g, '$1')
+// One color + icon per section so a teacher can tell them apart at a glance,
+// consistent between the summary card and its modal
+const SECTION_META = {
+  overview: { label: 'Class Summary', color: 'var(--accent)', icon: 'bubble_chart' },
+  flagged: { label: 'Flagged Students', color: '#d93025', icon: 'priority_high' },
+  misconceptions: { label: 'Common Misconceptions', color: '#e67e22', icon: 'psychology_alt' },
+  themes: { label: 'Solid Themes', color: '#27ae60', icon: 'check_circle' },
+  'next-steps': { label: 'Next Steps', color: '#3b82f6', icon: 'checklist' },
 }
 
 function ClasswideReportBody({ sections, totalSubmissions }) {
@@ -72,8 +43,18 @@ function ClasswideReportBody({ sections, totalSubmissions }) {
   const themesBody = findBody(sections, 'Solid Themes')
   const nextStepsBody = findBody(sections, 'Next Steps')
 
-  const [showOverviewModal, setShowOverviewModal] = useState(false)
-  const [expandedCard, setExpandedCard] = useState(null)
+  // Which section's modal is open, or null — a single switch drives all five,
+  // instead of separate open/close state per section
+  const [openModal, setOpenModal] = useState(null)
+
+  useEffect(() => {
+    if (!openModal) return
+    function handleKeyDown(e) {
+      if (e.key === 'Escape') setOpenModal(null)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [openModal])
 
   // AI didn't follow the expected format at all — fall back to raw stacked sections
   if (!overviewBody && !flaggedBody && !misconceptionsBody && !themesBody && !nextStepsBody) {
@@ -98,75 +79,111 @@ function ClasswideReportBody({ sections, totalSubmissions }) {
   const solidPct = Math.round((solidCount / total) * 100)
 
   const cards = [
-    { id: 'flagged', label: 'Flagged Students', stat: <span className="card-number">{flaggedCount}</span> },
+    { id: 'flagged', stat: <span className="card-number" style={{ color: SECTION_META.flagged.color }}>{flaggedCount}</span> },
     {
       id: 'misconceptions',
-      label: 'Common Misconception',
       stat: <CardSnapshot text={misconceptionGroups[0]?.label} moreCount={misconceptionGroups.length - 1} />,
     },
     {
       id: 'themes',
-      label: 'Solid Themes',
       stat: <CardSnapshot text={themeGroups[0]?.label} moreCount={themeGroups.length - 1} />,
     },
     {
       id: 'next-steps',
-      label: 'Next Steps',
       stat: <CardSnapshot text={nextSteps[0]} moreCount={nextSteps.length - 1} />,
     },
   ]
 
-  function toggleCard(id) {
-    setExpandedCard(current => (current === id ? null : id))
-  }
-
   return (
     <div className="report-body report-body-classwide">
-      <div className="overview-box">
-        <h3 className="overview-heading">Class Overview</h3>
-        <div className="overview-text">
-          {overviewBody.split('\n').filter(Boolean).map((line, i) => (
-            <p key={i} dangerouslySetInnerHTML={{ __html: formatLine(line) }} />
-          ))}
+      <button
+        type="button"
+        className="overview-box"
+        style={{ '--section-color': SECTION_META.overview.color }}
+        onClick={() => setOpenModal('overview')}
+      >
+        <div className="section-banner">
+          <Icon name={SECTION_META.overview.icon} className="section-banner-icon" />
+          <h3 className="section-banner-title">Class Summary</h3>
         </div>
-        <button type="button" className="overview-view-more" onClick={() => setShowOverviewModal(true)}>
-          View more
-        </button>
-      </div>
+        <div className="overview-body">
+          <div className="overview-text">
+            {overviewBody.split('\n').filter(Boolean).map((line, i) => (
+              <p key={i} dangerouslySetInnerHTML={{ __html: formatLine(line) }} />
+            ))}
+          </div>
+          <Icon name="chevron_right" className="section-card-chevron" />
+        </div>
+      </button>
 
       <div className="report-card-row">
-        {cards.map(card => (
-          <div key={card.id} className="report-card">
-            <h4 className="report-card-title">{card.label}</h4>
-            <div className="report-card-stat">{card.stat}</div>
+        {cards.map(card => {
+          const meta = SECTION_META[card.id]
+          return (
             <button
+              key={card.id}
               type="button"
-              className="report-card-view-more"
-              onClick={() => toggleCard(card.id)}
+              className="report-card"
+              style={{ '--section-color': meta.color }}
+              onClick={() => setOpenModal(card.id)}
             >
-              {expandedCard === card.id ? 'Close' : 'View more'}
+              <div className="section-banner">
+                <Icon name={meta.icon} className="section-banner-icon" />
+                <h4 className="section-banner-title">{meta.label}</h4>
+              </div>
+              <div className={`report-card-body${card.id === 'flagged' ? ' report-card-body--stat' : ''}`}>
+                <div className="report-card-stat">{card.stat}</div>
+                <Icon name="chevron_right" className="section-card-chevron" />
+              </div>
             </button>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
-      {expandedCard === 'flagged' && <ReportSection heading="Flagged Students" body={flaggedBody} />}
-      {expandedCard === 'misconceptions' && (
-        <GroupedSection heading="Common Misconceptions" groups={misconceptionGroups} />
+      {openModal === 'overview' && (
+        <SectionModal meta={SECTION_META.overview} onClose={() => setOpenModal(null)}>
+          {overviewDetailsBody.split('\n').filter(Boolean).map((line, i) => (
+            <p key={i} className="modal-paragraph" dangerouslySetInnerHTML={{ __html: formatLine(line) }} />
+          ))}
+          <div className="overview-stats">
+            <div className="overview-stat">
+              <span className="overview-stat-number">{total}</span>
+              <span className="overview-stat-label">Submissions reviewed</span>
+            </div>
+            <div className="overview-stat">
+              <span className="overview-stat-number" style={{ color: SECTION_META.flagged.color }}>{flaggedPct}%</span>
+              <span className="overview-stat-label">Flagged ({flaggedCount})</span>
+            </div>
+            <div className="overview-stat">
+              <span className="overview-stat-number" style={{ color: SECTION_META.themes.color }}>{solidPct}%</span>
+              <span className="overview-stat-label">Solid understanding ({solidCount})</span>
+            </div>
+          </div>
+        </SectionModal>
       )}
-      {expandedCard === 'themes' && <GroupedSection heading="Solid Themes" groups={themeGroups} />}
-      {expandedCard === 'next-steps' && <ReportSection heading="Next Steps" body={nextStepsBody} />}
 
-      {showOverviewModal && (
-        <OverviewModal
-          onClose={() => setShowOverviewModal(false)}
-          detailsBody={overviewDetailsBody}
-          totalSubmissions={total}
-          flaggedCount={flaggedCount}
-          flaggedPct={flaggedPct}
-          solidCount={solidCount}
-          solidPct={solidPct}
-        />
+      {openModal === 'flagged' && (
+        <SectionModal meta={SECTION_META.flagged} onClose={() => setOpenModal(null)}>
+          <NameChips names={flaggedNames} color={SECTION_META.flagged.color} emptyText="No students flagged." />
+        </SectionModal>
+      )}
+
+      {openModal === 'misconceptions' && (
+        <SectionModal meta={SECTION_META.misconceptions} onClose={() => setOpenModal(null)}>
+          <GroupedChips groups={misconceptionGroups} color={SECTION_META.misconceptions.color} emptyText="No common misconceptions detected." />
+        </SectionModal>
+      )}
+
+      {openModal === 'themes' && (
+        <SectionModal meta={SECTION_META.themes} onClose={() => setOpenModal(null)}>
+          <GroupedChips groups={themeGroups} color={SECTION_META.themes.color} emptyText="No solid themes detected." />
+        </SectionModal>
+      )}
+
+      {openModal === 'next-steps' && (
+        <SectionModal meta={SECTION_META['next-steps']} onClose={() => setOpenModal(null)}>
+          <NumberedSteps steps={nextSteps} color={SECTION_META['next-steps'].color} />
+        </SectionModal>
       )}
     </div>
   )
@@ -182,51 +199,171 @@ function CardSnapshot({ text, moreCount }) {
   )
 }
 
-function GroupedSection({ heading, groups }) {
+// Student names as small pill chips instead of a bullet list — easier to scan,
+// especially when a group has many names
+function NameChips({ names, color, emptyText }) {
+  if (names.length === 0) return <p className="modal-empty-note">{emptyText}</p>
   return (
-    <div className="report-section">
-      <h3 className="section-heading">{heading}</h3>
-      <div className="section-body">
-        {groups.length === 0 && <p>None detected.</p>}
-        {groups.map((group, i) => (
-          <div key={i} className="report-group">
-            <p className="report-group-label"><strong>{stripBold(group.label)}</strong></p>
-            <ul className="report-group-list">
-              {group.students.map((s, j) => <li key={j}>{stripBold(s)}</li>)}
-            </ul>
+    <div className="chip-row">
+      {names.map((name, i) => (
+        <span key={i} className="name-chip" style={{ '--chip-color': color }}>
+          {stripBold(name)}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+// Common Misconceptions / Solid Themes — each group's label as a small heading,
+// with its students as chips underneath
+function GroupedChips({ groups, color, emptyText }) {
+  if (groups.length === 0) return <p className="modal-empty-note">{emptyText}</p>
+  return (
+    <div className="group-list">
+      {groups.map((group, i) => (
+        <div key={i} className="report-group">
+          <p className="report-group-label">{stripBold(group.label)}</p>
+          <div className="chip-row">
+            {group.students.map((s, j) => (
+              <span key={j} className="name-chip" style={{ '--chip-color': color }}>
+                {stripBold(s)}
+              </span>
+            ))}
           </div>
-        ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Next Steps as a numbered list with a colored number badge per item, instead
+// of plain stacked paragraphs — reads more like an actionable checklist
+function NumberedSteps({ steps, color }) {
+  if (steps.length === 0) return <p className="modal-empty-note">No next steps provided.</p>
+  return (
+    <ol className="steps-list">
+      {steps.map((step, i) => (
+        <li key={i} className="steps-item">
+          <span className="steps-number" style={{ background: color }}>{i + 1}</span>
+          <span className="steps-text" dangerouslySetInnerHTML={{ __html: formatLine(step) }} />
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+// Curated view of one student's individual report — used in the Flagged tab's
+// popup instead of dumping every section as generic stacked paragraphs. Skips
+// the raw submission answer entirely (a Google Doc submission could be long)
+// in favor of the AI's own Submission Summary, and keeps Misconceptions/Next
+// Steps concise rather than repeating information across sections.
+export function IndividualReportSummary({ content }) {
+  const sections = splitSections(content)
+  const summaryBody = findBody(sections, 'Submission Summary')
+  const gotRightBody = findBody(sections, 'What They Got Right')
+  const misconceptionsBody = findBody(sections, 'Misconceptions Detected')
+  const qualityBody = findBody(sections, 'Submission Quality')
+  const gradeBody = findBody(sections, 'Grade')
+  const nextStepsBody = findBody(sections, 'Recommended Next Steps')
+
+  const gotRight = parseBullets(gotRightBody)
+  const misconceptions = parseBullets(misconceptionsBody)
+  const nextSteps = parseBullets(nextStepsBody)
+
+  // "Submission quality is acceptable" is the normal case — only worth a
+  // callout when there's an actual issue (blank, too short, off-topic, etc.)
+  const qualityIssue = qualityBody && !qualityBody.toLowerCase().includes('acceptable')
+    ? stripBold(qualityBody.trim())
+    : null
+
+  return (
+    <div className="individual-summary">
+      {summaryBody && (
+        <div className="individual-summary-box">
+          <h4 className="individual-summary-box-title">Submission Summary</h4>
+          <p className="individual-summary-text">{stripBold(summaryBody.trim())}</p>
+        </div>
+      )}
+
+      {qualityIssue && (
+        <p className="individual-quality-flag">
+          <Icon name="error" className="individual-quality-icon" />
+          {qualityIssue}
+        </p>
+      )}
+
+      {gradeBody && (
+        <div className="individual-grade-box">
+          {gradeBody.split('\n').filter(Boolean).map((line, i) => (
+            <p key={i} dangerouslySetInnerHTML={{ __html: formatLine(line) }} />
+          ))}
+        </div>
+      )}
+
+      <div className="individual-summary-columns">
+        <div className="individual-summary-box" style={{ '--box-color': SECTION_META.themes.color }}>
+          <h4 className="individual-summary-box-title" style={{ color: SECTION_META.themes.color }}>
+            <Icon name="check_circle" style={{ color: SECTION_META.themes.color }} /> What they got right
+          </h4>
+          <IconBulletList
+            items={gotRight}
+            icon="check"
+            color={SECTION_META.themes.color}
+            emptyText="No correct understanding demonstrated."
+          />
+        </div>
+        <div className="individual-summary-box" style={{ '--box-color': SECTION_META.misconceptions.color }}>
+          <h4 className="individual-summary-box-title" style={{ color: SECTION_META.misconceptions.color }}>
+            <Icon name="psychology_alt" style={{ color: SECTION_META.misconceptions.color }} /> Misconceptions
+          </h4>
+          <IconBulletList
+            items={misconceptions}
+            icon="close"
+            color={SECTION_META.misconceptions.color}
+            emptyText="No misconceptions detected."
+          />
+        </div>
+      </div>
+
+      <div className="individual-summary-box" style={{ '--box-color': SECTION_META['next-steps'].color }}>
+        <h4 className="individual-summary-box-title" style={{ color: SECTION_META['next-steps'].color }}>
+          <Icon name="checklist" style={{ color: SECTION_META['next-steps'].color }} /> Recommended next steps
+        </h4>
+        <NumberedSteps steps={nextSteps} color={SECTION_META['next-steps'].color} />
       </div>
     </div>
   )
 }
 
-function OverviewModal({ onClose, detailsBody, totalSubmissions, flaggedCount, flaggedPct, solidCount, solidPct }) {
+function IconBulletList({ items, icon, color, emptyText }) {
+  if (items.length === 0) return <p className="modal-empty-note">{emptyText}</p>
   return (
-    <div className="overview-modal-backdrop" onClick={onClose}>
-      <div className="overview-modal" onClick={e => e.stopPropagation()}>
-        <div className="overview-modal-header">
-          <h3>Class Overview — Details</h3>
-          <button type="button" className="overview-modal-close" onClick={onClose} aria-label="Close">×</button>
-        </div>
-        <div className="overview-modal-body">
-          {detailsBody.split('\n').filter(Boolean).map((line, i) => (
-            <p key={i} dangerouslySetInnerHTML={{ __html: formatLine(line) }} />
-          ))}
-          <div className="overview-stats">
-            <div className="overview-stat">
-              <span className="overview-stat-number">{totalSubmissions}</span>
-              <span className="overview-stat-label">Submissions reviewed</span>
-            </div>
-            <div className="overview-stat">
-              <span className="overview-stat-number">{flaggedPct}%</span>
-              <span className="overview-stat-label">Flagged ({flaggedCount})</span>
-            </div>
-            <div className="overview-stat">
-              <span className="overview-stat-number">{solidPct}%</span>
-              <span className="overview-stat-label">Solid understanding ({solidCount})</span>
-            </div>
+    <ul className="icon-bullet-list">
+      {items.map((item, i) => (
+        <li key={i} className="icon-bullet-item">
+          <Icon name={icon} className="icon-bullet-icon" style={{ color }} />
+          <span dangerouslySetInnerHTML={{ __html: formatLine(item) }} />
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function SectionModal({ meta, onClose, children }) {
+  return (
+    <div className="report-modal-backdrop" onClick={onClose}>
+      <div className="report-modal" style={{ '--section-color': meta.color }} onClick={e => e.stopPropagation()}>
+        <div className="report-modal-header">
+          <div className="report-modal-title">
+            <Icon name={meta.icon} className="report-modal-icon" />
+            <h3>{meta.label}</h3>
           </div>
+          <button type="button" className="report-modal-close" onClick={onClose} aria-label="Close">
+            <Icon name="close" />
+          </button>
+        </div>
+        <div className="report-modal-body">
+          {children}
         </div>
       </div>
     </div>

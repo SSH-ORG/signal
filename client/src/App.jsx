@@ -21,6 +21,9 @@ function App() {
   const [imported, setImported] = useState([])           // Stored in our database
   const [dataLoading, setDataLoading] = useState(true)
   const [dataError, setDataError] = useState(null)
+  // Names of courses whose assignments failed to sync (not just empty) — shown as a
+  // non-blocking warning since the rest of the screen still loaded successfully
+  const [failedCourses, setFailedCourses] = useState([])
 
   // 'courses' | 'assignments' | 'detail' | 'account' | 'help' | 'reports'
   const [screen, setScreen] = useState('courses')
@@ -44,6 +47,7 @@ function App() {
 
     async function load() {
       setDataLoading(true)
+      setDataError(null) // Clear any error from a previous failed attempt before retrying
       try {
         const [gc, imp] = await Promise.all([
           getGoogleCoursework(),
@@ -52,8 +56,22 @@ function App() {
         setGcCourses(gc.courses)
         setGcAssignments(gc.coursework)
         setImported(imp)
-      } catch {
-        setDataError('Failed to load assignments. Make sure the server is running.')
+        setFailedCourses(gc.failed_courses || [])
+      } catch (err) {
+        // Logged for us — the teacher-facing message below is deliberately
+        // simplified and shouldn't include raw backend/Google error text
+        console.error('Failed to load courses:', err)
+
+        if (err instanceof TypeError) {
+          // fetch() itself threw — the request never reached the server. A teacher
+          // can't act on "the server," so point at what they can check instead;
+          // the console.error above has the real cause for us.
+          setDataError('Please check your internet and try again.')
+        } else if (err.status === 401 || err.status === 404) {
+          setDataError('Your Google session expired. Please log in again.')
+        } else {
+          setDataError('Failed to load courses from Google Classroom. Please try again in a moment.')
+        }
       } finally {
         setDataLoading(false)
       }
@@ -157,9 +175,7 @@ function App() {
   } else if (screen === 'reports') {
     page = (
       <ReportsPage
-        gcAssignments={gcAssignments}
         onViewAssignment={handleViewAssignmentById}
-        onGoToAssignments={handleSelectCourse}
         onGoToClasses={handleBackToCourses}
       />
     )
@@ -167,10 +183,12 @@ function App() {
     page = (
       <AssignmentsPage
         courseId={selectedCourse.course_id}
+        courseName={selectedCourse.course_name}
         gcAssignments={gcAssignments}
         imported={imported}
         onBack={handleBackToCourses}
         onSelectAssignment={handleSelectAssignment}
+        onDataChange={refreshImported}
       />
     )
   } else if (screen === 'detail' && selectedAssignment) {
@@ -188,6 +206,7 @@ function App() {
         courses={gcCourses}
         loading={dataLoading}
         error={dataError}
+        failedCourses={failedCourses}
         onSelectCourse={handleSelectCourse}
       />
     )

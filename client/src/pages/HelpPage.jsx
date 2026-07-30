@@ -8,7 +8,7 @@ function HelpPage() {
     <div className="screen">
       <main className="screen-main">
         <div>
-          <h1 className="screen-title">How-to</h1>
+          <h1 className="screen-title">how-to</h1>
           <p className="screen-subtitle">A guide to your first AI report</p>
         </div>
 
