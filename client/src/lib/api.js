@@ -2,20 +2,35 @@
 // if the backend isn't running on the default local port.
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
+// Builds an Error from a failed response, preferring the backend's actual detail
+// message over a generic fallback, and tagging the status code so callers can
+// branch on the failure reason (e.g. expired session vs a Google API failure)
+async function readErrorDetail(response, fallback) {
+  let detail
+  try {
+    detail = (await response.json()).detail
+  } catch {
+    // Body wasn't JSON — use the fallback below
+  }
+  const error = new Error(detail || fallback)
+  error.status = response.status
+  return error
+}
+
 // Fetches all assignments from the teacher's Google Classroom courses (live, not stored)
 export async function getGoogleCoursework() {
   const response = await fetch(`${API_BASE_URL}/api/google/coursework`, {
     credentials: 'include',
   })
-  if (!response.ok) throw new Error('Failed to fetch Google Classroom assignments')
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to fetch Google Classroom courses and assignments')
   return response.json()
 }
 
-// Imports a specific Google Classroom assignment and its submissions into our database
+// Syncs a specific Google Classroom assignment and its submissions into our database
 // context is optional — the teacher-reviewed mental model/reference material text from the
-// Assignment Detail screen. Only used the first time an assignment is imported (ignored on re-sync).
-export async function importCoursework(googleCourseworkId, courseId, context, courseName = '') {
-  const response = await fetch(`${API_BASE_URL}/api/google/coursework/${googleCourseworkId}/import`, {
+// Assignment Detail screen. Only used the first time an assignment is synced (ignored on re-sync).
+export async function syncCoursework(googleCourseworkId, courseId, context, courseName = '') {
+  const response = await fetch(`${API_BASE_URL}/api/google/coursework/${googleCourseworkId}/sync`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -23,12 +38,25 @@ export async function importCoursework(googleCourseworkId, courseId, context, co
   })
   if (!response.ok) {
     const err = await response.json()
-    throw new Error(err.detail || 'Failed to import assignment')
+    throw new Error(err.detail || 'Failed to sync assignment')
   }
   return response.json()
 }
 
-// Updates the mental model/reference material context used by the AI report for an already-imported assignment
+// Syncs every published assignment in one course at once — called automatically
+// when a teacher opens or revisits that course's Coursework screen
+export async function syncCourse(courseId, courseName = '') {
+  const response = await fetch(`${API_BASE_URL}/api/google/courses/${courseId}/sync`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ course_name: courseName }),
+  })
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to sync course')
+  return response.json()
+}
+
+// Updates the mental model/reference material context used by the AI report for an already-synced assignment
 export async function updateCourseworkContext(courseworkId, context) {
   const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}`, {
     method: 'PATCH',
@@ -55,16 +83,41 @@ export async function getGCRubric(googleCourseworkId, courseId) {
   return data.rubric_text  // null if no rubric exists
 }
 
-// Returns all assignments the teacher has already imported into Signal
-export async function getImportedCoursework() {
-  const response = await fetch(`${API_BASE_URL}/api/coursework/`, {
+// Fetches the assignment's current description directly from Google Classroom —
+// a pure read, doesn't touch submissions/roster. Used by "Sync Description" so
+// a teacher can deliberately pull in a live edit instead of it silently
+// overwriting their own custom description.
+export async function getGCDescription(googleCourseworkId, courseId) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/google/coursework/${googleCourseworkId}/description?course_id=${courseId}`,
+    { credentials: 'include' }
+  )
+  if (!response.ok) throw new Error('Failed to fetch description from Google Classroom')
+  const data = await response.json()
+  return data.description
+}
+
+// Fetches a course's live roster from Google Classroom — a pure read, nothing
+// is saved. Used by the Students tab so non-submitters can be listed too,
+// not just students who already have a synced submission.
+export async function getCourseRoster(courseId) {
+  const response = await fetch(`${API_BASE_URL}/api/google/courses/${courseId}/roster`, {
     credentials: 'include',
   })
-  if (!response.ok) throw new Error('Failed to fetch imported assignments')
+  if (!response.ok) throw new Error('Failed to fetch roster from Google Classroom')
   return response.json()
 }
 
-// Returns all assignments that have a generated report, across all courses
+// Returns all assignments the teacher has already synced into Signal
+export async function getSyncedCoursework() {
+  const response = await fetch(`${API_BASE_URL}/api/coursework/`, {
+    credentials: 'include',
+  })
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to fetch synced assignments')
+  return response.json()
+}
+
+// Returns all assignments that have a built report, across all courses
 export async function getAllReports() {
   const response = await fetch(`${API_BASE_URL}/api/reports`, {
     credentials: 'include',
@@ -73,7 +126,7 @@ export async function getAllReports() {
   return response.json()
 }
 
-// Returns the existing AI report for an assignment (404 if not generated yet)
+// Returns the existing AI report for an assignment (404 if not built yet)
 export async function getReport(courseworkId) {
   const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report`, {
     credentials: 'include',
@@ -83,21 +136,21 @@ export async function getReport(courseworkId) {
   return response.json()
 }
 
-// Triggers the AI to generate a confusion report for an assignment
+// Triggers the AI to build a confusion report for an assignment
 // Sends all stored submissions to the AI and saves the response
-export async function generateReport(courseworkId) {
+export async function buildReport(courseworkId) {
   const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report`, {
     method: 'POST',
     credentials: 'include',
   })
   if (!response.ok) {
     const err = await response.json()
-    throw new Error(err.detail || 'Failed to generate report')
+    throw new Error(err.detail || 'Failed to build report')
   }
   return response.json()
 }
 
-// Returns all submissions for an assignment, including any individual AI reports already generated
+// Returns all submissions for an assignment, including any student reports already built
 export async function getSubmissions(courseworkId) {
   const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions`, {
     credentials: 'include',
@@ -106,20 +159,20 @@ export async function getSubmissions(courseworkId) {
   return response.json()
 }
 
-// Generates an individual AI report for one specific student's submission
-export async function generateIndividualReport(courseworkId, submissionId) {
+// Builds an AI report for one specific student's submission
+export async function buildStudentReport(courseworkId, submissionId) {
   const response = await fetch(
     `${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions/${submissionId}`,
     { method: 'POST', credentials: 'include' }
   )
   if (!response.ok) {
     const err = await response.json()
-    throw new Error(err.detail || 'Failed to generate individual report')
+    throw new Error(err.detail || 'Failed to build student report')
   }
   return response.json()
 }
 
-// Deletes the generated report for an assignment so the teacher can regenerate
+// Deletes the report for an assignment so the teacher can rebuild it
 export async function deleteReport(courseworkId) {
   const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report`, {
     method: 'DELETE',
@@ -145,11 +198,92 @@ export async function emailReport(courseworkId) {
   return response.json()
 }
 
-// Sends the whole browser to Google's consent screen (via our backend).
-// This must be a full page redirect rather than a fetch, since Google needs
-// to redirect the actual browser tab through its login flow and back.
-export function redirectToGoogleLogin() {
-  window.location.href = `${API_BASE_URL}/auth/google`
+// Emails one student's report to the teacher's own address —
+// they can forward it on to the student themselves afterward if they want to
+export async function emailStudentReport(courseworkId, submissionId) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions/${submissionId}/email`,
+    { method: 'POST', credentials: 'include' }
+  )
+  if (!response.ok) {
+    const err = await response.json()
+    throw new Error(err.detail || 'Failed to email report')
+  }
+  return response.json()
+}
+
+// Sends one student's report directly to the student's own email, instead of
+// to the teacher — the "student agency" path, so the student gets feedback
+// without the teacher having to manually forward it themselves.
+// nextStepOverride is optional — lets a teacher tailor that one section's
+// wording (e.g. "you should..." instead of "the student should...") for just
+// this email, without changing the report as stored.
+export async function sendReportToStudent(courseworkId, submissionId, nextStepOverride) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions/${submissionId}/send-to-student`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ next_step_override: nextStepOverride || null }),
+    }
+  )
+  if (!response.ok) {
+    const err = await response.json()
+    throw new Error(err.detail || 'Failed to send report to student')
+  }
+  return response.json()
+}
+
+// Opens Google's consent screen in a popup instead of navigating the main window,
+// so Google's own page never becomes part of the main window's browser history —
+// that's what avoids the "back button lands on a stale, already-used Google page"
+// problem a full-page redirect through Google leaves behind.
+// Resolves true once the popup's backend callback confirms login succeeded, or
+// false if the teacher closes the popup without completing it (or the popup was
+// blocked and we fell back to a full-page redirect instead, which never resolves
+// this promise at all since the page navigates away).
+export function loginWithGooglePopup() {
+  const url = `${API_BASE_URL}/auth/google`
+  const width = 500
+  const height = 650
+  const left = window.screenX + (window.outerWidth - width) / 2
+  const top = window.screenY + (window.outerHeight - height) / 2
+
+  // Must be called synchronously from the click handler with no `await` before
+  // it — browsers silently block popups opened after any async delay
+  const popup = window.open(url, 'signal-google-login', `width=${width},height=${height},left=${left},top=${top}`)
+
+  if (!popup) {
+    // Blocked — fall back to the old full-page redirect rather than failing silently
+    window.location.href = url
+    return Promise.resolve(false)
+  }
+
+  return new Promise((resolve) => {
+    function cleanup() {
+      window.removeEventListener('message', handleMessage)
+      clearInterval(closeCheck)
+      if (!popup.closed) popup.close()
+    }
+
+    function handleMessage(event) {
+      if (event.origin !== API_BASE_URL || event.data?.type !== 'signal-auth-success') return
+      cleanup()
+      resolve(true)
+    }
+
+    // Also resolves if the teacher closes the popup themselves without finishing
+    // login, so the caller isn't left waiting forever
+    const closeCheck = setInterval(() => {
+      if (popup.closed) {
+        cleanup()
+        resolve(false)
+      }
+    }, 500)
+
+    window.addEventListener('message', handleMessage)
+  })
 }
 
 // Asks the backend who's currently logged in, based on the session cookie.
@@ -199,7 +333,7 @@ export async function updateProfile(fields) {
 }
 
 // Permanently deletes the teacher's account and all their data (cascades
-// through their imported coursework, submissions, and reports).
+// through their synced coursework, submissions, and reports).
 export async function deleteAccount() {
   const response = await fetch(`${API_BASE_URL}/auth/account`, {
     method: 'DELETE',

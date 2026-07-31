@@ -17,6 +17,7 @@ class User(Base):
     # overwritten by a later re-login.
     display_name = Column(Text)
     email = Column(Text)
+    # Master on/off switch for report-summary emails
     email_notifications_enabled = Column(Boolean, nullable=False, server_default="false")
-    # immediate | daily | weekly | immediate_weekly | off
-    notification_preference = Column(Text, nullable=False, server_default="immediate")
+    # Cadence used when email_notifications_enabled is true — daily | weekly
+    notification_preference = Column(Text, nullable=False, server_default="daily")

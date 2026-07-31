@@ -56,6 +56,9 @@
   font-size: 1.5rem;
   font-weight: 700;
   color: var(--text-h);
+  /* Matches the logo's letter-spacing so the lowercase title still reads as a
+     deliberate heading style, not just an uncapitalized version of the subtitle below it. */
+  letter-spacing: -0.02em;
 }
 
 .screen-subtitle {
@@ -74,10 +77,44 @@
   color: var(--error);
 }
 
+/* Same amber tone as .flag-badge--partial — a non-blocking heads-up, not a
+   blocking error, so it reuses the "partial/needs attention" color instead of red.
+   Unlike the base .screen-status (a full-page loading/error state), this sits
+   above real content, so it's left-aligned with no large top margin. */
+.screen-status--warning {
+  color: #b45309;
+  text-align: left;
+  margin-top: 0;
+}
+
 .empty-state {
   font-size: 0.875rem;
   color: var(--text);
   margin-top: 8px;
+}
+
+/* ── Coursework screen controls (search) ─────────────── */
+.coursework-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--text-h);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent-border);
 }
 
 /* ── Card / row list (assignments) ───────────────────── */

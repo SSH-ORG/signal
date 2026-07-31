@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Text, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, Text, ForeignKey
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -17,8 +17,7 @@ class Submission(Base):
     # derived from it (e.g. "Student #4f2a") when flagged-student features are built.
     google_user_id = Column(Text)
     student_name = Column(Text, nullable=True)        # Full name from Google Classroom roster
-    individual_report = Column(Text, nullable=True)  # AI-generated report for this one student's submission
-    resolved = Column(Boolean, nullable=False, server_default="false")  # Teacher dismissed this student from future email digests
+    student_report = Column(Text, nullable=True)  # AI-generated report for this one student's submission
 
     # Link back to the parent coursework
     coursework = relationship("Coursework", back_populates="submissions")

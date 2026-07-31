@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
-import { getReport, generateReport, emailReport, importCoursework, updateCourseworkContext, getGCRubric, getSubmissions, generateIndividualReport } from '../lib/api'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { getReport, buildReport, emailReport, syncCoursework, updateCourseworkContext, getGCRubric, getGCDescription, getSubmissions, buildStudentReport, emailStudentReport, sendReportToStudent, getCourseRoster } from '../lib/api'
 import Icon from '../components/Icon'
-import ReportBody from '../components/ReportBody'
+import ReportBody, { StudentReportSummary } from '../components/ReportBody'
+import { parseFlaggedStudents, splitSections, findBody, parseBullets } from '../lib/reportParsing'
 import './Screens.css'
 import './AssignmentDetailPage.css'
 
@@ -18,25 +19,40 @@ function extractContextSection(savedContext, label) {
   return match ? match[1].trim() : ''
 }
 
+// Pulls the current Next Step text out of a student report, so the "Email to
+// student" draft starts pre-filled with what's already there — same fallback
+// as StudentReportSummary in case the AI didn't use bullet formatting
+function extractNextStep(studentReport) {
+  if (!studentReport) return ''
+  const body = findBody(splitSections(studentReport), 'Next Step')
+  const bullets = parseBullets(body)
+  return bullets[0] || body.trim()
+}
+
 // Third screen — shown when a teacher clicks into a specific assignment.
 // Lets the teacher review/edit the mental model and supporting materials,
-// sync submissions, and generate/view the AI confusion report.
-function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange }) {
-  // Local copy of the imported record so this screen can react immediately to
+// sync submissions, and build/view the AI confusion report.
+function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, onDataChange }) {
+  // Local copy of the synced record so this screen can react immediately to
   // sync/context-save actions without waiting on a parent re-fetch
-  const [record, setRecord] = useState(importedRecord)
+  const [record, setRecord] = useState(syncedRecord)
   // 'context' | 'report' — only relevant once record exists (before that,
-  // there's nothing to report on yet, so Context is the only thing shown)
-  const [activeTab, setActiveTab] = useState('context')
+  // there's nothing to report on yet, so Context is the only thing shown).
+  // Arriving from the Reports screen opens straight to Report, since that's
+  // the entire point of that click.
+  const [activeTab, setActiveTab] = useState(initialTab || 'context')
   // The teacher's own words — restored from the saved context, never touched by syncing
   const [mentalModelText, setMentalModelText] = useState(
-    () => extractContextSection(importedRecord?.context, 'Mental Model')
+    () => extractContextSection(syncedRecord?.context, 'Mental Model')
   )
-  // Description always mirrors the live Classroom description — it's free to fetch,
-  // so there's no need to sync before it's editable.
-  const [descriptionText, setDescriptionText] = useState(assignment.description || '')
+  // Restored from the saved context like Mental Model/Rubric, so a teacher's edits
+  // survive a revisit — falls back to the live Classroom description only the first
+  // time, before anything has ever been saved.
+  const [descriptionText, setDescriptionText] = useState(
+    () => extractContextSection(syncedRecord?.context, 'Assignment Description') || assignment.description || ''
+  )
   const [rubricText, setRubricText] = useState(
-    () => extractContextSection(importedRecord?.context, 'Rubric')
+    () => extractContextSection(syncedRecord?.context, 'Rubric')
   )
   // Each reference material can be left out of what's actually sent to the AI
   // while still staying visible/editable — e.g. excluding the rubric if a
@@ -44,33 +60,78 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
   const [includeDescription, setIncludeDescription] = useState(true)
   const [includeRubric, setIncludeRubric] = useState(true)
   const [syncingSubmissions, setSyncingSubmissions] = useState(false)
+  const [syncingDescription, setSyncingDescription] = useState(false)
   const [syncingRubric, setSyncingRubric] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [descriptionError, setDescriptionError] = useState(null)
   const [rubricError, setRubricError] = useState(null)
   const [actionError, setActionError] = useState(null)
 
   const [report, setReport] = useState(null)
-  const [loadingReport, setLoadingReport] = useState(!!importedRecord)
-  const [generating, setGenerating] = useState(false)
+  const [loadingReport, setLoadingReport] = useState(!!syncedRecord)
+  const [building, setBuilding] = useState(false)
   const [reportError, setReportError] = useState(null)
   const [emailing, setEmailing] = useState(false)
   const [emailError, setEmailError] = useState(null)
   const [emailSuccess, setEmailSuccess] = useState(false)
 
-  // Individual report state — 'classwide' | 'individual'
+  // 'classwide' | 'students' — Students lists everyone (submitted or not), works
+  // whether or not a classwide report has ever been built, and highlights
+  // whoever the classwide report flagged once one exists
   const [reportMode, setReportMode] = useState('classwide')
   const [submissions, setSubmissions] = useState([])
-  const [generatingIndividual, setGeneratingIndividual] = useState(null) // submission_id currently generating
-  const [generatingAll, setGeneratingAll] = useState(false)
-  const [generateProgress, setGenerateProgress] = useState({ done: 0, total: 0 })
+  // null = not fetched yet (fetched once, on first visit to the Students tab —
+  // never re-fetched on later tab switches, so flipping between tabs doesn't
+  // repeatedly hit Google's API)
+  const [roster, setRoster] = useState(null)
+  const [studentSearch, setStudentSearch] = useState('')
+  // { key, message } for whichever student's Build press just failed/was
+  // rejected — shown inline on that specific row instead of a single banner
+  // at the top of a potentially long, scrolled list, so it's actually visible
+  // right where the teacher was looking when they clicked
+  const [studentActionError, setStudentActionError] = useState(null)
+  const [buildingStudentId, setBuildingStudentId] = useState(null) // submission_id currently building
+  const [buildingAll, setBuildingAll] = useState(false)
+  const [buildProgress, setBuildProgress] = useState({ done: 0, total: 0 })
   // submission_id of the student whose report is open in the popup, or null
   const [openReportId, setOpenReportId] = useState(null)
+  const [emailingStudent, setEmailingStudent] = useState(false)
+  const [sendingToStudent, setSendingToStudent] = useState(false)
+  const [studentEmailSuccess, setStudentEmailSuccess] = useState(null) // 'me' | 'student' | null
+  const [studentEmailError, setStudentEmailError] = useState(null)
+  // Whether the "Email Report" dropdown (To me / To student) is open —
+  // collapses back whenever the modal switches students
+  const [choosingEmailRecipient, setChoosingEmailRecipient] = useState(false)
+  // Whether "Email to student" has opened the Next Step edit-before-send view
+  const [editingNextStep, setEditingNextStep] = useState(false)
+  const [nextStepDraft, setNextStepDraft] = useState('')
+  const emailDropdownRef = useRef(null)
+
+  // Closes the email dropdown on Escape or on any click outside it
+  useEffect(() => {
+    if (!choosingEmailRecipient) return
+    function handleKeyDown(e) {
+      if (e.key === 'Escape') setChoosingEmailRecipient(false)
+    }
+    function handleClickOutside(e) {
+      if (emailDropdownRef.current && !emailDropdownRef.current.contains(e.target)) {
+        setChoosingEmailRecipient(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    const timer = setTimeout(() => window.addEventListener('click', handleClickOutside), 0)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('click', handleClickOutside)
+      clearTimeout(timer)
+    }
+  }, [choosingEmailRecipient])
 
   const courseworkId = record?.coursework_id
 
-  // Load the existing classwide report (if any) once the assignment has been imported
+  // Load the existing classwide report (if any) once the assignment has been synced
   useEffect(() => {
     if (!courseworkId) return
     getReport(courseworkId)
@@ -79,21 +140,121 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
       .finally(() => setLoadingReport(false))
   }, [courseworkId])
 
-  // Load submissions (with any individual reports) when switching to Individual mode
+  // Load submissions (with any student reports) when switching to the Students tab
   useEffect(() => {
-    if (!courseworkId || reportMode !== 'individual') return
+    if (!courseworkId || reportMode !== 'students') return
     getSubmissions(courseworkId).then(setSubmissions).catch(() => {})
   }, [courseworkId, reportMode])
 
-  // Closes the individual report popup on Escape
+  // Roster is fetched once, the first time the Students tab is opened — the
+  // `roster !== null` check means flipping back to this tab later never
+  // re-fetches it, so it never hits Google's API more than once per visit
+  // to this page. Falls back to an empty list (submitters only) on failure
+  // instead of retrying forever.
+  useEffect(() => {
+    if (!assignment.course_id || reportMode !== 'students' || roster !== null) return
+    getCourseRoster(assignment.course_id).then(setRoster).catch(() => setRoster([]))
+  }, [assignment.course_id, reportMode, roster])
+
+  // Flagged students come straight from the classwide report's own "Flagged
+  // Students" section — no student report needs to exist yet to know who's flagged
+  const flaggedStudents = useMemo(() => parseFlaggedStudents(report?.content), [report])
+
+  // _displayName matches on the same positional "Student N" fallback the
+  // backend used when building the classwide prompt (raw fetch order) — this
+  // is what flagged-name matching below has to compare against, since that's
+  // literally what the AI was told to call this student. _niceName is purely
+  // for what's shown to the teacher — falls back to the roster's real name
+  // before resorting to "Student N", for submissions synced before names were
+  // backfilled. Keeping these separate means a nicer displayed name can never
+  // cause a real flagged student to stop matching.
+  const submissionsWithDisplayNames = useMemo(() => {
+    const rosterNameById = new Map((roster || []).map((r) => [r.google_user_id, r.name]))
+    return submissions.map((s, i) => {
+      const fallbackName = `Student ${i + 1}`
+      return {
+        ...s,
+        _displayName: s.student_name || fallbackName,
+        _niceName: s.student_name || rosterNameById.get(s.google_user_id) || fallbackName,
+      }
+    })
+  }, [submissions, roster])
+
+  // Full student list for the Students tab — everyone who submitted, plus
+  // anyone from the roster who hasn't, so a teacher can search/select any
+  // student rather than only whoever the AI happened to flag. "Flagged" is
+  // now just a highlight/sort cue on top of that, not a gate.
+  const allStudents = useMemo(() => {
+    const flaggedNameSet = new Set(flaggedStudents.map((f) => f.name.trim().toLowerCase()))
+    const isFlagged = (name) => flaggedNameSet.has(name.trim().toLowerCase())
+
+    const submittedUserIds = new Set(
+      submissionsWithDisplayNames.map((s) => s.google_user_id).filter(Boolean)
+    )
+
+    const submitters = submissionsWithDisplayNames.map((s) => ({
+      key: `submission-${s.submission_id}`,
+      name: s._niceName,
+      // What flagged-name matching actually compares against — kept separate
+      // from the (possibly nicer) displayed name, see the comment above
+      matchName: s._displayName,
+      hasSubmitted: true,
+      flagged: isFlagged(s._displayName),
+      submission: s,
+    }))
+
+    const nonSubmitters = (roster || [])
+      .filter((r) => !submittedUserIds.has(r.google_user_id))
+      .map((r) => ({
+        key: `roster-${r.google_user_id}`,
+        name: r.name,
+        matchName: r.name,
+        hasSubmitted: false,
+        flagged: isFlagged(r.name),
+        submission: null,
+      }))
+
+    return [...submitters, ...nonSubmitters].sort((a, b) => {
+      if (a.flagged !== b.flagged) return a.flagged ? -1 : 1
+      return a.name.localeCompare(b.name)
+    })
+  }, [submissionsWithDisplayNames, roster, flaggedStudents])
+
+  const filteredStudents = useMemo(() => {
+    const query = studentSearch.trim().toLowerCase()
+    if (!query) return allStudents
+    return allStudents.filter((s) => s.name.toLowerCase().includes(query))
+  }, [allStudents, studentSearch])
+
+  // Flagged by the AI, but no student (submitted or not) matched that name —
+  // a data problem (e.g. a roster mismatch), not a clean report
+  const unmatchedFlaggedCount = useMemo(() => {
+    const matchedNames = new Set(allStudents.filter((s) => s.flagged).map((s) => s.matchName.trim().toLowerCase()))
+    return flaggedStudents.filter((f) => !matchedNames.has(f.name.trim().toLowerCase())).length
+  }, [flaggedStudents, allStudents])
+
+  // Opens/closes the student report popup and clears any leftover email
+  // status from a previous student in the same step, so it never leaks
+  // between them — called from every place that changes which report is
+  // open, instead of a separate effect watching openReportId for this
   useEffect(() => {
     if (!openReportId) return
     function handleKeyDown(e) {
-      if (e.key === 'Escape') setOpenReportId(null)
+      if (e.key === 'Escape') setStudentReportModal(null)
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [openReportId])
+
+  function setStudentReportModal(submissionId) {
+    setEmailingStudent(false)
+    setSendingToStudent(false)
+    setStudentEmailSuccess(null)
+    setStudentEmailError(null)
+    setChoosingEmailRecipient(false)
+    setEditingNextStep(false)
+    setOpenReportId(submissionId)
+  }
 
   // Mental model, description, and rubric are edited separately but combined
   // into one labeled string for the AI — the report only reads a single context
@@ -107,15 +268,20 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
     ].filter(Boolean).join('\n\n')
   }
 
-  // Creates the coursework record on first click (unlocking Save Context and
-  // the AI Report tab) and re-syncs the submission count on later clicks.
-  // Lives outside the Context tab since it isn't a Context-specific action —
-  // it's the gate the rest of this page depends on.
-  async function handleSyncSubmissions() {
+  // First sync now happens automatically when a teacher opens or revisits the
+  // Coursework screen (see AssignmentsPage), so by the time this page is reached
+  // an assignment is normally already synced — this button just refreshes the
+  // submission count. It's still able to create the record too (syncCoursework
+  // is idempotent either way), which only matters if this page is somehow reached
+  // before that automatic sync has run yet. Deliberately does NOT touch the
+  // description — see handleSyncDescription for that, same pattern as Sync Rubric.
+  async function handleRefreshSubmissions() {
     setSyncingSubmissions(true)
     setActionError(null)
     try {
-      const result = await importCoursework(assignment.google_coursework_id, assignment.course_id, combinedContext(), assignment.course_name)
+      const result = await syncCoursework(
+        assignment.google_coursework_id, assignment.course_id, combinedContext(), assignment.course_name
+      )
       if (!record) setLoadingReport(true) // first sync — the effect above is about to fetch the (nonexistent) report
       setRecord((prev) => ({
         coursework_id: result.coursework_id,
@@ -129,6 +295,24 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
       setActionError(err.message)
     } finally {
       setSyncingSubmissions(false)
+    }
+  }
+
+  // Pulls the current description from Google Classroom — a pure read, so it
+  // works even before the assignment has been synced into Signal at all.
+  // Replaces descriptionText outright, same as Sync Rubric — this is the only
+  // thing that should ever overwrite a teacher's own custom description.
+  async function handleSyncDescription() {
+    setSyncingDescription(true)
+    setDescriptionError(null)
+    try {
+      const freshDescription = await getGCDescription(assignment.google_coursework_id, assignment.course_id)
+      setDescriptionText(freshDescription || '')
+      setSaveSuccess(false)
+    } catch (err) {
+      setDescriptionError(err.message)
+    } finally {
+      setSyncingDescription(false)
     }
   }
 
@@ -169,17 +353,17 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
     }
   }
 
-  async function handleGenerate() {
-    setGenerating(true)
+  async function handleBuild() {
+    setBuilding(true)
     setReportError(null)
     try {
-      const data = await generateReport(record.coursework_id)
+      const data = await buildReport(record.coursework_id)
       setReport(data)
       setActiveTab('report')
     } catch (err) {
       setReportError(err.message)
     } finally {
-      setGenerating(false)
+      setBuilding(false)
     }
   }
 
@@ -197,53 +381,122 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
     }
   }
 
-  async function handleGenerateIndividual(submissionId) {
-    setGeneratingIndividual(submissionId)
+  // Returns whether it succeeded, so a single-card click can decide whether
+  // to auto-open the report right after building it
+  async function handleBuildSubmissionReport(submissionId) {
+    setBuildingStudentId(submissionId)
     try {
-      const result = await generateIndividualReport(record.coursework_id, submissionId)
+      const result = await buildStudentReport(record.coursework_id, submissionId)
       setSubmissions((prev) =>
         prev.map((s) =>
           s.submission_id === submissionId
-            ? { ...s, individual_report: result.individual_report }
+            ? { ...s, student_report: result.student_report }
             : s
         )
       )
-    } catch (err) {
-      // Error shown inline per submission
+      return true
+    } catch {
+      return false
     } finally {
-      setGeneratingIndividual(null)
+      setBuildingStudentId(null)
     }
   }
 
-  // Generates individual reports for every student that doesn't have one yet,
-  // one at a time so Groq isn't hammered with 20 parallel requests.
-  // Updates each card live as its report finishes.
-  async function handleGenerateAll() {
-    const toGenerate = submissions.filter((s) => !s.individual_report)
-    if (toGenerate.length === 0) return
-    setGeneratingAll(true)
-    setGenerateProgress({ done: 0, total: toGenerate.length })
-    for (const sub of toGenerate) {
-      try {
-        const result = await generateIndividualReport(record.coursework_id, sub.submission_id)
-        setSubmissions((prev) =>
-          prev.map((s) =>
-            s.submission_id === sub.submission_id
-              ? { ...s, individual_report: result.individual_report }
-              : s
-          )
-        )
-      } catch { /* skip this student and continue */ }
-      setGenerateProgress((prev) => ({ ...prev, done: prev.done + 1 }))
+  async function handleEmailStudent(submissionId) {
+    setChoosingEmailRecipient(false)
+    setEmailingStudent(true)
+    setStudentEmailError(null)
+    setStudentEmailSuccess(null)
+    try {
+      await emailStudentReport(record.coursework_id, submissionId)
+      setStudentEmailSuccess('me')
+    } catch (err) {
+      setStudentEmailError(err.message)
+    } finally {
+      setEmailingStudent(false)
     }
-    setGeneratingAll(false)
   }
+
+  // "Email to student" opens this edit view instead of sending right away —
+  // pre-filled with the current Next Step text so a teacher can tailor the
+  // wording (e.g. "you should..." instead of "the student should...") before
+  // it goes out, without that edit touching the stored report
+  function handleOpenNextStepEdit(studentReport) {
+    setChoosingEmailRecipient(false)
+    setStudentEmailError(null)
+    setNextStepDraft(extractNextStep(studentReport))
+    setEditingNextStep(true)
+  }
+
+  async function handleSendToStudent(submissionId) {
+    setEditingNextStep(false)
+    setSendingToStudent(true)
+    setStudentEmailError(null)
+    setStudentEmailSuccess(null)
+    try {
+      await sendReportToStudent(record.coursework_id, submissionId, nextStepDraft)
+      setStudentEmailSuccess('student')
+    } catch (err) {
+      setStudentEmailError(err.message)
+    } finally {
+      setSendingToStudent(false)
+    }
+  }
+
+  // Opening an existing report never costs anything, so this is safe to fire
+  // straight from a click with no confirmation step
+  function handleViewStudentReport(student) {
+    setStudentReportModal(student.submission.submission_id)
+  }
+
+  // Building one does cost a Groq call, so this is only ever wired to its own
+  // explicit "Build" button — never triggered just by clicking/selecting a
+  // student — so browsing the list never silently spends anything. A
+  // non-submitter has nothing to build from, so this shows a message instead.
+  async function handleBuildStudentReport(student) {
+    setStudentActionError(null)
+    if (!student.hasSubmitted) {
+      setStudentActionError({
+        key: student.key,
+        message: `${student.name} hasn't turned this in.`,
+      })
+      return
+    }
+    const success = await handleBuildSubmissionReport(student.submission.submission_id)
+    if (success) {
+      setStudentReportModal(student.submission.submission_id)
+    } else {
+      setStudentActionError({ key: student.key, message: `Failed to build a report for ${student.name}. Try again.` })
+    }
+  }
+
+  // Builds reports for every flagged, submitted student that
+  // doesn't have one yet, one at a time so Groq isn't hammered with parallel
+  // requests. Updates each card live as its report finishes. Scoped to
+  // flagged students specifically — a bulk build across every student
+  // regardless of the AI's signal would be needlessly expensive.
+  async function handleBuildAllFlagged() {
+    const toBuild = allStudents.filter((s) => s.flagged && s.hasSubmitted && !s.submission.student_report)
+    if (toBuild.length === 0) return
+    setBuildingAll(true)
+    setBuildProgress({ done: 0, total: toBuild.length })
+    for (const student of toBuild) {
+      await handleBuildSubmissionReport(student.submission.submission_id)
+      setBuildProgress((prev) => ({ ...prev, done: prev.done + 1 }))
+    }
+    setBuildingAll(false)
+  }
+
+  // A report with nothing to compare submissions against is nearly always
+  // shallow and generic — Build/Refresh are disabled until there's at least
+  // a mental model, description, or rubric to work with
+  const hasContext = combinedContext().trim().length > 0
 
   return (
     <div className="screen">
       <main className="screen-main detail-main">
         <div>
-          <button className="back-btn" onClick={onBack}>← Coursework</button>
+          <button className="back-btn" onClick={onBack}>← coursework</button>
         </div>
 
         <div>
@@ -262,10 +515,10 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
             <button
               type="button"
               className="sync-icon-btn"
-              onClick={handleSyncSubmissions}
+              onClick={handleRefreshSubmissions}
               disabled={syncingSubmissions}
-              aria-label={syncingSubmissions ? 'Syncing submissions…' : 'Sync submissions'}
-              data-tooltip={syncingSubmissions ? 'Syncing…' : 'Sync submissions'}
+              aria-label={syncingSubmissions ? 'refreshing…' : 'refresh'}
+              data-tooltip={syncingSubmissions ? 'refreshing…' : 'refresh'}
             >
               <Icon name="sync" className="sync-btn-icon" />
             </button>
@@ -273,7 +526,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
           {actionError && <p className="report-error">{actionError}</p>}
         </div>
 
-        {/* Once imported, Context and AI Report are separate tabs — before
+        {/* Once synced, Context and AI Report are separate tabs — before
             that, there's nothing to report on yet, so just Context shows. */}
         {record && (
           <div className="tab-list" role="tablist">
@@ -308,19 +561,32 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                 Materials (secondary) — both feed into the same combined
                 context string the AI report reads. */}
             <div className="context-columns">
-              <div className="context-column">
-                <h3 className="context-group-label">Mental Model</h3>
-                <p className="detail-section-hint">
-                  What does student understanding look like? This is what the AI compares
-                  submissions against.
-                </p>
-                <textarea
-                  className="context-textarea"
-                  value={mentalModelText}
-                  onChange={(e) => { setMentalModelText(e.target.value); setSaveSuccess(false) }}
-                  placeholder="e.g., Students should be able to explain photosynthesis in their own words."
-                  rows={8}
-                />
+              <div className="context-column-group">
+                <div className="context-column">
+                  <h3 className="context-group-label">Mental Model</h3>
+                  <p className="detail-section-hint">
+                    What does student understanding look like? This is what the AI compares
+                    submissions against.
+                  </p>
+                  <textarea
+                    className="context-textarea"
+                    value={mentalModelText}
+                    onChange={(e) => { setMentalModelText(e.target.value); setSaveSuccess(false) }}
+                    placeholder="e.g., Students should be able to explain photosynthesis in their own words."
+                    rows={8}
+                  />
+                </div>
+                {/* Kept right under the Mental Model box (but outside it) instead of at
+                    the bottom of the whole section, so it's not easy to miss after editing */}
+                {record && (
+                  <div className="context-actions">
+                    <button className="primary-btn" onClick={handleSaveContext} disabled={saving}>
+                      {saving ? 'Saving…' : 'Save Context'}
+                    </button>
+                    {saveSuccess && <p className="save-success">Saved</p>}
+                    {saveError && <p className="report-error">{saveError}</p>}
+                  </div>
+                )}
               </div>
 
               <div className="context-column supporting-materials">
@@ -349,6 +615,16 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                     placeholder="No description found in Google Classroom, add one here."
                     rows={3}
                   />
+                  <button
+                    type="button"
+                    className="sync-btn sync-btn--small"
+                    onClick={handleSyncDescription}
+                    disabled={syncingDescription}
+                  >
+                    <Icon name="sync" className="sync-btn-icon" />
+                    {syncingDescription ? 'Syncing…' : 'Sync Description'}
+                  </button>
+                  {descriptionError && <p className="report-error">{descriptionError}</p>}
                 </div>
 
                 <div className="context-field">
@@ -386,23 +662,13 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                 </div>
               </div>
             </div>
-
-            {record && (
-              <div className="context-actions">
-                <button className="primary-btn" onClick={handleSaveContext} disabled={saving}>
-                  {saving ? 'Saving…' : 'Save Context'}
-                </button>
-                {saveSuccess && <p className="save-success">Saved</p>}
-                {saveError && <p className="report-error">{saveError}</p>}
-              </div>
-            )}
           </section>
         )}
 
         {/* AI report — its own tab, only reachable once the assignment has been synced */}
         {record && activeTab === 'report' && (
           <section className="detail-section">
-            {/* Classwide vs Individual mode toggle */}
+            {/* Classwide vs Flagged mode toggle */}
             <div className="report-mode-toggle">
               <button
                 type="button"
@@ -413,10 +679,10 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
               </button>
               <button
                 type="button"
-                className={`report-mode-btn${reportMode === 'individual' ? ' report-mode-btn--active' : ''}`}
-                onClick={() => setReportMode('individual')}
+                className={`report-mode-btn${reportMode === 'students' ? ' report-mode-btn--active' : ''}`}
+                onClick={() => setReportMode('students')}
               >
-                Individual
+                Student
               </button>
             </div>
 
@@ -427,9 +693,13 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
 
                 {!loadingReport && !report && !reportError && (
                   <div className="report-empty">
-                    <p className="report-empty-text">No report built yet.</p>
-                    <button className="generate-btn" onClick={handleGenerate} disabled={generating}>
-                      {generating ? 'Building…' : 'Build'}
+                    <p className={hasContext ? 'report-empty-text' : 'report-empty-text report-empty-text--warning'}>
+                      {hasContext
+                        ? 'No report built yet.'
+                        : 'No report built yet. Add context first.'}
+                    </p>
+                    <button className="build-btn" onClick={handleBuild} disabled={building || !hasContext}>
+                      {building ? 'Building…' : 'Build'}
                     </button>
                   </div>
                 )}
@@ -443,8 +713,12 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                         })}
                       </div>
                       <div className="report-actions">
-                        <button className="secondary-btn" onClick={handleGenerate} disabled={generating}>
-                          {generating ? 'Refreshing…' : 'Refresh Report'}
+                        <button
+                          className="secondary-btn"
+                          onClick={handleBuild}
+                          disabled={building}
+                        >
+                          {building ? 'Refreshing…' : 'Refresh Report'}
                         </button>
                         <button className="secondary-btn" onClick={handleEmailReport} disabled={emailing}>
                           {emailing ? 'Sending…' : 'Email Report'}
@@ -453,110 +727,132 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                     </div>
                     {emailSuccess && <p className="save-success">Sent to your email</p>}
                     {emailError && <p className="report-error">{emailError}</p>}
-                    <ReportBody content={report.content} mode="classwide" totalSubmissions={submissions.length} />
+                    <ReportBody content={report.content} mode="classwide" />
                   </div>
                 )}
 
-                {reportError && !generating && <p className="report-error">{reportError}</p>}
+                {reportError && !building && <p className="report-error">{reportError}</p>}
               </>
             )}
 
-            {/* ── INDIVIDUAL ── */}
-            {reportMode === 'individual' && (
-              <div className="individual-list">
-                {submissions.length === 0 && (
-                  <p className="report-status">No submissions synced yet.</p>
+            {/* ── STUDENTS ── */}
+            {reportMode === 'students' && (
+              <div className="student-list">
+                <input
+                  type="text"
+                  className="search-input"
+                  placeholder="Search students…"
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                  aria-label="Search students"
+                />
+
+                {!report && (
+                  <p className="report-status">
+                    No classwide report yet — you can still search for and build a report for any student below.
+                  </p>
                 )}
 
-                {submissions.length > 0 && (() => {
-                  // Count students whose report shows anything less than full understanding
-                  const flaggedCount = submissions.filter((s) => {
-                    const lvl = getFlagLevel(s.individual_report)
-                    return lvl && lvl !== 'on-track'
-                  }).length
-                  const allGenerated = submissions.every((s) => s.individual_report)
+                {/* Distinguished from "no students flagged" — this means the report DID
+                    flag students, but none of those names matched anyone in this list
+                    (e.g. a roster mismatch), which is a data problem, not a clean report. */}
+                {report && unmatchedFlaggedCount > 0 && (
+                  <p className="report-error">
+                    {unmatchedFlaggedCount} flagged student{unmatchedFlaggedCount !== 1 ? 's' : ''} couldn't be
+                    matched to anyone below. Try refreshing the report.
+                  </p>
+                )}
 
+                {allStudents.length === 0 && (
+                  <p className="report-status">No students found for this assignment yet.</p>
+                )}
+
+                {allStudents.length > 0 && filteredStudents.length === 0 && (
+                  <p className="report-status">No students match your search.</p>
+                )}
+
+                {/* Build All bar — scoped to flagged, already-submitted students only;
+                    only shown while there's something left to build, so it disappears
+                    once done instead of sitting there as a redundant disabled button */}
+                {(() => {
+                  const flaggedToBuild = allStudents.filter(
+                    (s) => s.flagged && s.hasSubmitted && !s.submission.student_report
+                  )
+                  if (!buildingAll && flaggedToBuild.length === 0) return null
                   return (
-                    <>
-                      {/* Generate All bar — shows live progress while running */}
-                      <div className="individual-bar">
-                        <button
-                          type="button"
-                          className="secondary-btn"
-                          onClick={handleGenerateAll}
-                          disabled={generatingAll || allGenerated}
-                        >
-                          {generatingAll
-                            ? `Generating… ${generateProgress.done} / ${generateProgress.total}`
-                            : allGenerated
-                            ? 'All Reports Generated'
-                            : `Generate All (${submissions.filter((s) => !s.individual_report).length} remaining)`}
-                        </button>
-                        {flaggedCount > 0 && (
-                          <span className="flag-summary-badge">
-                            {flaggedCount} student{flaggedCount !== 1 ? 's' : ''} flagged
-                          </span>
-                        )}
-                      </div>
-
-                      {submissions
-                        .map((sub, i) => ({ ...sub, _displayName: sub.student_name || `Student ${i + 1}` }))
-                        .sort((a, b) => a._displayName.localeCompare(b._displayName))
-                        .map((sub) => {
-                          const flagLevel = getFlagLevel(sub.individual_report)
-                          return (
-                            <div
-                              key={sub.submission_id}
-                              className={`individual-row${flagLevel && flagLevel !== 'on-track' ? ' individual-row--flagged' : ''}`}
-                            >
-                              <button
-                                type="button"
-                                className="individual-name-btn"
-                                onClick={() => setOpenReportId(sub.submission_id)}
-                                disabled={!sub.individual_report}
-                                title={sub.individual_report ? 'View report' : 'Generate a report to view it'}
-                              >
-                                {sub._displayName}
-                              </button>
-                              {flagLevel && (
-                                <span className={`flag-badge flag-badge--${flagLevel}`}>
-                                  {flagLevel === 'misconception' && 'Misconception'}
-                                  {flagLevel === 'partial' && 'Partial understanding'}
-                                  {flagLevel === 'no-engagement' && 'No response'}
-                                  {flagLevel === 'on-track' && 'On track'}
-                                </span>
-                              )}
-                              <button
-                                type="button"
-                                className="secondary-btn"
-                                onClick={() => handleGenerateIndividual(sub.submission_id)}
-                                disabled={generatingIndividual === sub.submission_id || generatingAll}
-                              >
-                                {generatingIndividual === sub.submission_id
-                                  ? 'Generating…'
-                                  : sub.individual_report
-                                  ? 'Regenerate'
-                                  : 'Generate'}
-                              </button>
-                            </div>
-                          )
-                        })}
-                    </>
+                    <div className="student-bar">
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={handleBuildAllFlagged}
+                        disabled={buildingAll}
+                      >
+                        {buildingAll
+                          ? `Building… ${buildProgress.done} / ${buildProgress.total}`
+                          : `Build All Flagged (${flaggedToBuild.length} remaining)`}
+                      </button>
+                    </div>
                   )
                 })()}
+
+                <div className="student-card-grid">
+                  {filteredStudents.map((student) =>
+                    student.hasSubmitted && student.submission.student_report ? (
+                      <button
+                        key={student.key}
+                        type="button"
+                        className="student-row student-row--clickable"
+                        onClick={() => handleViewStudentReport(student)}
+                      >
+                        <div className="student-card-info">
+                          <span className="student-card-name">{student.name}</span>
+                          {student.flagged && <span className="student-flagged-badge">Flagged</span>}
+                        </div>
+                        <Icon name="chevron_right" className="student-card-chevron" />
+                      </button>
+                    ) : (
+                      <div key={student.key} className="student-row student-row--column">
+                        <div className="student-row-main">
+                          <div className="student-card-info">
+                            <span className="student-card-name">{student.name}</span>
+                            {student.flagged && <span className="student-flagged-badge">Flagged</span>}
+                          </div>
+                          {buildingStudentId === student.submission?.submission_id ? (
+                            <span className="student-card-building">…</span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="student-build-btn"
+                              onClick={() => handleBuildStudentReport(student)}
+                              disabled={buildingAll}
+                            >
+                              Build
+                            </button>
+                          )}
+                        </div>
+                        {/* Shown right on the row that triggered it, not a banner elsewhere
+                            on the page — otherwise it can render off-screen above a
+                            scrolled list and look like nothing happened at all */}
+                        {studentActionError?.key === student.key && (
+                          <p className="report-error student-row-error">{studentActionError.message}</p>
+                        )}
+                      </div>
+                    )
+                  )}
+                </div>
               </div>
             )}
           </section>
         )}
 
-        {/* Individual report popup — opened by clicking a student's name above */}
+        {/* Student report popup — opened by clicking a student's name above */}
         {openReportId && (() => {
           const sub = submissions.find((s) => s.submission_id === openReportId)
-          if (!sub || !sub.individual_report) return null
+          if (!sub || !sub.student_report) return null
           const idx = submissions.indexOf(sub)
           const displayName = sub.student_name || `Student ${idx + 1}`
           return (
-            <div className="modal-backdrop" onClick={() => setOpenReportId(null)}>
+            <div className="modal-backdrop" onClick={() => setStudentReportModal(null)}>
               <div
                 className="modal-card modal-card--report"
                 role="dialog"
@@ -567,16 +863,73 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
                   className="modal-close"
                   type="button"
                   aria-label="Close"
-                  onClick={() => setOpenReportId(null)}
+                  onClick={() => setStudentReportModal(null)}
                 >
                   <Icon name="close" />
                 </button>
-                <h2 className="modal-title">{displayName}</h2>
-                <p className="individual-preview">
-                  {sub.content.length > 200 ? sub.content.slice(0, 200) + '…' : sub.content}
-                </p>
-                <div className="individual-report-body">
-                  <ReportBody content={sub.individual_report} />
+                <div className="modal-header-row">
+                  <h2 className="modal-title">{displayName}</h2>
+                  <div className="report-actions">
+                    <button
+                      className="secondary-btn"
+                      onClick={() => handleBuildSubmissionReport(sub.submission_id)}
+                      disabled={buildingStudentId === sub.submission_id}
+                    >
+                      {buildingStudentId === sub.submission_id ? 'Refreshing…' : 'Refresh Report'}
+                    </button>
+                    <div className="email-dropdown-wrapper" ref={emailDropdownRef}>
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={() => setChoosingEmailRecipient((v) => !v)}
+                        disabled={emailingStudent || sendingToStudent}
+                      >
+                        {emailingStudent || sendingToStudent ? 'Sending…' : 'Email Report'}
+                        <Icon name={choosingEmailRecipient ? 'expand_less' : 'expand_more'} />
+                      </button>
+                      {choosingEmailRecipient && (
+                        <div className="email-dropdown-menu">
+                          <button
+                            type="button"
+                            className="email-dropdown-item"
+                            onClick={() => handleEmailStudent(sub.submission_id)}
+                          >
+                            Email to me
+                          </button>
+                          <button
+                            type="button"
+                            className="email-dropdown-item"
+                            onClick={() => handleOpenNextStepEdit(sub.student_report)}
+                          >
+                            Email to student
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {editingNextStep && (
+                  <p className="next-step-edit-pointer">
+                    <Icon name="arrow_downward" />
+                    Edit the Next Step below before sending.
+                  </p>
+                )}
+                {studentEmailSuccess === 'me' && <p className="save-success">Sent to your email</p>}
+                {studentEmailSuccess === 'student' && <p className="save-success">Sent to the student</p>}
+                {studentEmailError && <p className="report-error">{studentEmailError}</p>}
+
+                <div className="student-report-body">
+                  <StudentReportSummary
+                    content={sub.student_report}
+                    submissionContent={sub.content}
+                    studentName={displayName}
+                    editingNextStep={editingNextStep}
+                    nextStepDraft={nextStepDraft}
+                    onNextStepDraftChange={setNextStepDraft}
+                    onSendToStudent={() => handleSendToStudent(sub.submission_id)}
+                    onCancelEdit={() => setEditingNextStep(false)}
+                    sendingToStudent={sendingToStudent}
+                  />
                 </div>
               </div>
             </div>
@@ -585,33 +938,6 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
       </main>
     </div>
   )
-}
-
-
-// Returns the severity level for a student's individual report.
-// Supports both the old prompt format (explicit labels) and the new format
-// (section-based signals) so existing reports don't break after the prompt update.
-function getFlagLevel(individualReport) {
-  if (!individualReport) return null
-
-  // Old prompt format
-  if (individualReport.includes('No engagement')) return 'no-engagement'
-  if (individualReport.includes('Misconception present')) return 'misconception'
-  if (individualReport.includes('Partial understanding')) return 'partial'
-  if (individualReport.includes('Demonstrates understanding')) return 'on-track'
-
-  // New prompt format — submission quality issues
-  if (
-    individualReport.includes('Submission was blank') ||
-    individualReport.includes('Submission too short') ||
-    individualReport.includes('Submission did not address')
-  ) return 'no-engagement'
-
-  // New prompt format — misconceptions section
-  if (individualReport.includes('No misconceptions detected')) return 'on-track'
-  if (individualReport.includes('Misconceptions Detected')) return 'misconception'
-
-  return 'on-track'
 }
 
 

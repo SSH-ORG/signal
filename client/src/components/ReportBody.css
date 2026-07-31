@@ -40,24 +40,96 @@
   font-weight: 600;
 }
 
-/* ── Class Overview box ── */
+/* ── Shared color-coded banner (icon + title) used by the Overview box and
+   each of the 4 section cards — --section-color is set per-instance. Same
+   pattern as the Courses screen's class cards: a filled color block at the
+   top with the title in it, not just an accent border. ── */
+
+.section-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 14px 18px;
+  background: var(--section-color);
+}
+
+.section-banner-icon {
+  font-size: 20px;
+  line-height: 1;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.section-banner-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+/* ── Top layout: Class Summary on the left, the 4 section cards as a 2x2
+   grid of squares on the right. The summary is downsized vertically instead
+   of the old horizontal narrowing (centered, less than full width) — it
+   sizes to its own (shorter) content and sits centered within the row,
+   instead of being stretched to match the taller grid beside it. ── */
+
+.classwide-top-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: center;
+}
+
+@media (max-width: 700px) {
+  .classwide-top-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Class Summary box ── */
 
 .overview-box {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 10px;
   box-shadow: var(--shadow-sm);
-  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  overflow: hidden;
+  position: relative;
+  /* A size floor so it doesn't look tiny/awkward next to the taller 2x2 grid
+     when the summary itself is short — still sizes taller than this on its
+     own if the content needs more room. A gentle square-leaning ratio (not a
+     strict 1:1 matching the full grid height) so it reads closer to square. */
+  min-height: 280px;
+  aspect-ratio: 5 / 4;
+  /* The whole card is a button now — reset default button chrome. Browsers
+     apply their own padding to <button> by default, which was pushing the
+     banner in from the card's edges instead of sitting flush against them. */
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
 }
 
-.overview-heading {
-  margin: 0;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--accent);
+.overview-box:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+
+.overview-body {
+  padding: 16px 44px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  justify-content: center;
+  gap: 10px;
 }
 
 .overview-text p {
@@ -65,29 +137,45 @@
   font-size: 0.9rem;
   color: var(--text-h);
   line-height: 1.65;
+  /* Safety cap for an unusually long AI summary — the modal still shows the
+     full text regardless */
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-.overview-view-more {
-  align-self: flex-end;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--accent);
-  background: none;
-  border: none;
-  padding: 4px 0;
-  cursor: pointer;
-}
-
-.overview-view-more:hover {
-  text-decoration: underline;
+/* At-a-glance verdict badge (Needs Attention / Mixed Understanding / Strong
+   Understanding) — a categorical call instead of a precise percentage, since
+   that's closer to what a teacher actually needs from a glance */
+.confusion-badge {
+  align-self: flex-start;
+  margin: 20px 0 0 20px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--badge-color);
+  background: color-mix(in srgb, var(--badge-color) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--badge-color) 35%, transparent);
+  border-radius: 100px;
+  padding: 5px 12px;
 }
 
 /* ── Section cards (Flagged Students / Common Misconception / Solid Themes / Next Steps) ── */
 
 .report-card-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
   gap: 14px;
+  aspect-ratio: 1 / 1;
+}
+
+@media (max-width: 700px) {
+  .report-card-row {
+    aspect-ratio: auto;
+  }
 }
 
 .report-card {
@@ -95,28 +183,71 @@
   border: 1px solid var(--border-strong);
   border-radius: 10px;
   box-shadow: var(--shadow-sm);
-  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 120px;
+  position: relative;
+  /* The whole card is a button now — reset default button chrome, including
+     the browser's default button padding that was leaving a gap between the
+     banner and the card's edges */
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.report-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+
+.report-card-body {
+  padding: 14px 40px 16px 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-height: 120px;
-}
-
-.report-card-title {
-  margin: 0;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text);
+  flex: 1;
 }
 
 .report-card-stat {
   flex: 1;
 }
 
+/* Flagged Students is the only card with a preview (the count) — center it
+   since the body has nothing else in it */
+.report-card-body--stat {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+/* .report-card-stat's flex:1 (needed elsewhere to push content down) stretches
+   it to fill all available space, which cancels out the parent's
+   justify-content:center — nothing left to center once it fills the box.
+   Here it stays a compact, truly centered block instead. */
+.report-card-body--stat .report-card-stat {
+  flex: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Bottom-right cue that the whole card is clickable, replacing a "See more" button */
+.section-card-chevron {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  font-size: 20px;
+  color: var(--section-color);
+  opacity: 0.6;
+}
+
 .card-number {
-  font-size: 1.8rem;
+  font-size: 2.5rem;
   font-weight: 700;
-  color: var(--text-h);
 }
 
 .card-snapshot {
@@ -139,46 +270,254 @@
   color: var(--text);
 }
 
-.report-card-view-more {
-  align-self: flex-start;
-  font-size: 0.78rem;
+/* ── Name chips (Flagged Students list, and students under each group) ── */
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.name-chip {
+  font-size: 0.82rem;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--chip-color);
+  background: color-mix(in srgb, var(--chip-color) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--chip-color) 35%, transparent);
+  border-radius: 100px;
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+
+/* ── Grouped modal body (Common Misconceptions / Solid Themes detail) ── */
+
+.group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.report-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.report-group-label {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+/* ── Next Steps — numbered checklist ── */
+
+.steps-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.steps-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.steps-number {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.steps-number-icon {
+  font-size: 14px;
+}
+
+.steps-text {
+  font-size: 0.9rem;
+  color: var(--text-h);
+  line-height: 1.6;
+  padding-top: 2px;
+}
+
+.steps-text strong {
+  color: var(--text-h);
+}
+
+/* ── Student report summary (Student tab popup) ── */
+
+.student-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.student-summary-text {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-h);
+  line-height: 1.6;
+}
+
+/* Each topic gets its own clearly bounded box (border + subtle background +
+   a colored left edge matching that topic's color) instead of just floating
+   in the same flow with only spacing between them — makes it obvious at a
+   glance where one section ends and the next begins. */
+.student-summary-box {
+  background: var(--bg);
+  border: 1px solid var(--box-color, var(--border-strong));
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.student-summary-box-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+/* Replaces the Next Step box's normal content while a teacher tailors the
+   wording for "Email to student" — sits inside the same box (no extra
+   background/border of its own) so the edit reads as part of the report,
+   not a separate detached form */
+.next-step-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.next-step-edit-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.next-step-edit-textarea {
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--text-h);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.next-step-edit-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.student-quality-flag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--error);
+  background: #fff0f0;
+  border: 1px solid #fcc;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.student-quality-icon {
+  font-size: 16px;
+}
+
+.student-summary-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 480px) {
+  .student-summary-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Collapsed by default (see the component) — a small text toggle rather than
+   a styled button, so it doesn't visually compete with the actual report content */
+.student-submission-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
   background: none;
   border: none;
   padding: 0;
   cursor: pointer;
 }
 
-.report-card-view-more:hover {
-  text-decoration: underline;
-}
-
-/* ── Grouped section body (Common Misconceptions / Solid Themes detail) ── */
-
-.report-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.report-group-label {
-  margin: 0;
-  font-size: 0.9rem;
+.student-submission-toggle-btn:hover {
   color: var(--text-h);
 }
 
-.report-group-list {
-  margin: 0;
-  padding-left: 20px;
-  font-size: 0.88rem;
+.student-submission-text {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
   color: var(--text-h);
   line-height: 1.6;
+  white-space: pre-wrap;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
 }
 
-/* ── Overview "view more" modal ── */
 
-.overview-modal-backdrop {
+.icon-bullet-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.icon-bullet-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-h);
+  line-height: 1.5;
+}
+
+.icon-bullet-icon {
+  font-size: 15px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* ── Section modal (Overview + all 4 cards share this shell) ── */
+
+.report-modal-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
@@ -189,7 +528,7 @@
   padding: 20px;
 }
 
-.overview-modal {
+.report-modal {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -200,7 +539,7 @@
   overflow-y: auto;
 }
 
-.overview-modal-header {
+.report-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -211,65 +550,60 @@
   background: var(--surface);
 }
 
-.overview-modal-header h3 {
+.report-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-modal-icon {
+  font-size: 20px;
+  color: var(--section-color);
+}
+
+.report-modal-title h3 {
   margin: 0;
   font-size: 1rem;
   font-weight: 600;
   color: var(--text-h);
 }
 
-.overview-modal-close {
-  font-size: 1.3rem;
-  line-height: 1;
+.report-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
   color: var(--text);
   background: none;
   border: none;
+  border-radius: 50%;
   cursor: pointer;
-  padding: 4px;
+  padding: 6px;
+  transition: background 0.15s, color 0.15s;
 }
 
-.overview-modal-close:hover {
+.report-modal-close:hover {
+  background: var(--accent-bg);
   color: var(--text-h);
 }
 
-.overview-modal-body {
+.report-modal-body {
   padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.overview-modal-body p {
+.modal-paragraph {
   margin: 0;
   font-size: 0.9rem;
   color: var(--text-h);
   line-height: 1.65;
 }
 
-.overview-stats {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  border-top: 1px solid var(--border);
-  padding-top: 16px;
-}
-
-.overview-stat {
-  flex: 1;
-  min-width: 100px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  text-align: center;
-}
-
-.overview-stat-number {
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: var(--accent);
-}
-
-.overview-stat-label {
-  font-size: 0.75rem;
+.modal-empty-note {
+  margin: 0;
+  font-size: 0.88rem;
   color: var(--text);
 }
+

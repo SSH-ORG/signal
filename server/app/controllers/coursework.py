@@ -6,7 +6,7 @@ from app.models.coursework import Coursework
 
 
 def get_all_coursework(user: User, db: Session) -> list:
-    # Returns all assignments this teacher has imported into Signal
+    # Returns all assignments this teacher has synced into Signal
     coursework = db.query(Coursework).filter(Coursework.user_id == user.user_id).all()
 
     return [

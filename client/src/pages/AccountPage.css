@@ -66,58 +66,85 @@
   color: var(--accent);
 }
 
-/* ── Notification preference selector ────────────────── */
-.account-notif-options {
+/* ── Notification master toggle ───────────────────────── */
+.account-notif-header-row {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
-.account-notif-option {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  padding: 12px 14px;
-  font: inherit;
-  text-align: left;
-  background: var(--surface);
+.account-toggle {
+  flex-shrink: 0;
+  width: 44px;
+  height: 26px;
+  padding: 3px;
+  border-radius: 100px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  background: var(--bg);
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  display: flex;
+  align-items: center;
+  transition: background 0.15s, border-color 0.15s;
 }
 
-.account-notif-option:hover:not(:disabled) {
-  border-color: var(--accent-border);
-}
-
-.account-notif-option--active {
-  background: var(--accent-bg);
+.account-toggle--on {
+  background: var(--accent);
   border-color: var(--accent);
 }
 
-.account-notif-option:disabled {
+.account-toggle-knob {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s;
+}
+
+.account-toggle--on .account-toggle-knob {
+  transform: translateX(18px);
+}
+
+.account-toggle:disabled {
   opacity: 0.6;
   cursor: default;
 }
 
-.account-notif-label {
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--text-h);
+/* ── Notification cadence toggle group ────────────────── */
+.account-notif-toggle-group {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
 }
 
-.account-notif-option--active .account-notif-label {
+.account-notif-toggle-btn {
+  padding: 8px 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.account-notif-toggle-btn:hover:not(:disabled) {
+  border-color: var(--accent);
   color: var(--accent);
 }
 
-.account-notif-hint {
-  font-size: 0.78rem;
-  color: var(--text);
-  opacity: 0.7;
-  line-height: 1.4;
+.account-notif-toggle-btn--active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.account-notif-toggle-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 /* ── Delete account ───────────────────────────────────── */

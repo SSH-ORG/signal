@@ -17,7 +17,7 @@ class ContextUpdateRequest(BaseModel):
 
 
 # GET /api/coursework
-# Returns all assignments this teacher has already imported into Signal
+# Returns all assignments this teacher has already synced into Signal
 @router.get("/")
 def list_coursework(user: User = Depends(require_login), db: Session = Depends(get_db)):
     return coursework_controller.get_all_coursework(user, db)

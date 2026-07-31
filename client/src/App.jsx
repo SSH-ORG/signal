@@ -7,9 +7,9 @@ import AccountPage from './pages/AccountPage'
 import HelpPage from './pages/HelpPage'
 import ReportsPage from './pages/ReportsPage'
 import AppShell from './components/AppShell'
-import { getCurrentUser, getGoogleCoursework, getImportedCoursework } from './lib/api'
+import { getCurrentUser, getGoogleCoursework, getSyncedCoursework } from './lib/api'
 
-// App is the root component — it owns the shared Classroom/imported-assignment data
+// App is the root component — it owns the shared Classroom/synced-assignment data
 // and switches between screens: Classes -> Coursework -> Assignment Detail, plus
 // Account, Help, and Reports reached via the sidebar.
 function App() {
@@ -18,15 +18,22 @@ function App() {
 
   const [gcCourses, setGcCourses] = useState([])         // Every active Google Classroom course, even ones with no assignments
   const [gcAssignments, setGcAssignments] = useState([]) // Live from Google Classroom (flat list)
-  const [imported, setImported] = useState([])           // Stored in our database
+  const [synced, setSynced] = useState([])                // Stored in our database
   const [dataLoading, setDataLoading] = useState(true)
   const [dataError, setDataError] = useState(null)
+  // Names of courses whose assignments failed to sync (not just empty) — shown as a
+  // non-blocking warning since the rest of the screen still loaded successfully
+  const [failedCourses, setFailedCourses] = useState([])
 
   // 'courses' | 'assignments' | 'detail' | 'account' | 'help' | 'reports'
   const [screen, setScreen] = useState('courses')
   const [selectedCourse, setSelectedCourse] = useState(null) // { course_id, course_name }
   const [selectedAssignment, setSelectedAssignment] = useState(null) // GC assignment object
-  const [selectedImportedRecord, setSelectedImportedRecord] = useState(null)
+  const [selectedSyncedRecord, setSelectedSyncedRecord] = useState(null)
+  // Which tab Assignment Detail should open on — 'context' when arriving via
+  // Courses (nothing to report on yet is the common case), 'report' when
+  // arriving via the Reports screen (the whole point of that click is the report)
+  const [detailInitialTab, setDetailInitialTab] = useState('context')
 
   // On first load, check if the teacher already has an active session
   useEffect(() => {
@@ -36,7 +43,7 @@ function App() {
       .finally(() => setAuthLoading(false))
   }, [])
 
-  // Load live Classroom data and imported assignments on login and every time
+  // Load live Classroom data and synced assignments on login and every time
   // the teacher navigates back to the Classes screen — this way new classes or
   // assignments added in Google Classroom appear without a full page refresh
   useEffect(() => {
@@ -44,16 +51,31 @@ function App() {
 
     async function load() {
       setDataLoading(true)
+      setDataError(null) // Clear any error from a previous failed attempt before retrying
       try {
-        const [gc, imp] = await Promise.all([
+        const [gc, syncedData] = await Promise.all([
           getGoogleCoursework(),
-          getImportedCoursework(),
+          getSyncedCoursework(),
         ])
         setGcCourses(gc.courses)
         setGcAssignments(gc.coursework)
-        setImported(imp)
-      } catch {
-        setDataError('Failed to load assignments. Make sure the server is running.')
+        setSynced(syncedData)
+        setFailedCourses(gc.failed_courses || [])
+      } catch (err) {
+        // Logged for us — the teacher-facing message below is deliberately
+        // simplified and shouldn't include raw backend/Google error text
+        console.error('Failed to load courses:', err)
+
+        if (err instanceof TypeError) {
+          // fetch() itself threw — the request never reached the server. A teacher
+          // can't act on "the server," so point at what they can check instead;
+          // the console.error above has the real cause for us.
+          setDataError('Please check your internet and try again.')
+        } else if (err.status === 401 || err.status === 404) {
+          setDataError('Your Google session expired. Please log in again.')
+        } else {
+          setDataError('Failed to load courses from Google Classroom. Please try again in a moment.')
+        }
       } finally {
         setDataLoading(false)
       }
@@ -64,9 +86,16 @@ function App() {
   // Don't render anything until we know the auth state
   if (authLoading) return null
 
+  // Called once the Google login popup confirms the session was created —
+  // re-checks who's logged in so the app switches off AuthPage immediately,
+  // without a full page reload (the main window never navigated away)
+  async function handleLoginSuccess() {
+    const currentUser = await getCurrentUser()
+    setUser(currentUser)
+  }
+
   if (!user) {
-    // AuthPage handles the redirect to Google — no extra props needed
-    return <AuthPage />
+    return <AuthPage onLoginSuccess={handleLoginSuccess} />
   }
 
   // Called after AccountPage has already logged out / deleted the account on
@@ -80,12 +109,12 @@ function App() {
     setUser(updatedUser)
   }
 
-  // Re-fetches the imported list only — used after import/sync/context-save so
+  // Re-fetches the synced list only — used after sync/context-save so
   // badges and submission counts stay fresh when navigating back
-  async function refreshImported() {
+  async function refreshSynced() {
     try {
-      const imp = await getImportedCoursework()
-      setImported(imp)
+      const syncedData = await getSyncedCoursework()
+      setSynced(syncedData)
     } catch {
       // Non-fatal — the detail screen already has the latest data locally
     }
@@ -96,9 +125,10 @@ function App() {
     setScreen('assignments')
   }
 
-  function handleSelectAssignment(assignment, importedRecord) {
+  function handleSelectAssignment(assignment, syncedRecord) {
     setSelectedAssignment({ ...assignment, course_name: selectedCourse.course_name })
-    setSelectedImportedRecord(importedRecord)
+    setSelectedSyncedRecord(syncedRecord)
+    setDetailInitialTab('context')
     setScreen('detail')
   }
 
@@ -109,7 +139,7 @@ function App() {
 
   function handleBackToAssignments() {
     setSelectedAssignment(null)
-    setSelectedImportedRecord(null)
+    setSelectedSyncedRecord(null)
     setScreen('assignments')
   }
 
@@ -126,17 +156,18 @@ function App() {
   }
 
   // Navigate to an assignment's detail page directly from the Reports page
-  // Looks up the full assignment object and imported record by coursework_id
+  // Looks up the full assignment object and synced record by coursework_id
   function handleViewAssignmentById(courseworkId) {
-    const importedRecord = imported.find((cw) => cw.coursework_id === courseworkId)
-    if (!importedRecord) return
+    const syncedRecord = synced.find((cw) => cw.coursework_id === courseworkId)
+    if (!syncedRecord) return
     const gcAssignment = gcAssignments.find(
-      (a) => a.google_coursework_id === importedRecord.google_coursework_id
+      (a) => a.google_coursework_id === syncedRecord.google_coursework_id
     )
     if (!gcAssignment) return
     setSelectedCourse({ course_id: gcAssignment.course_id, course_name: gcAssignment.course_name })
     setSelectedAssignment({ ...gcAssignment, course_name: gcAssignment.course_name })
-    setSelectedImportedRecord(importedRecord)
+    setSelectedSyncedRecord(syncedRecord)
+    setDetailInitialTab('report')
     setScreen('detail')
   }
 
@@ -157,9 +188,7 @@ function App() {
   } else if (screen === 'reports') {
     page = (
       <ReportsPage
-        gcAssignments={gcAssignments}
         onViewAssignment={handleViewAssignmentById}
-        onGoToAssignments={handleSelectCourse}
         onGoToClasses={handleBackToCourses}
       />
     )
@@ -167,19 +196,22 @@ function App() {
     page = (
       <AssignmentsPage
         courseId={selectedCourse.course_id}
+        courseName={selectedCourse.course_name}
         gcAssignments={gcAssignments}
-        imported={imported}
+        synced={synced}
         onBack={handleBackToCourses}
         onSelectAssignment={handleSelectAssignment}
+        onDataChange={refreshSynced}
       />
     )
   } else if (screen === 'detail' && selectedAssignment) {
     page = (
       <AssignmentDetailPage
         assignment={selectedAssignment}
-        importedRecord={selectedImportedRecord}
+        syncedRecord={selectedSyncedRecord}
+        initialTab={detailInitialTab}
         onBack={handleBackToAssignments}
-        onDataChange={refreshImported}
+        onDataChange={refreshSynced}
       />
     )
   } else {
@@ -188,6 +220,7 @@ function App() {
         courses={gcCourses}
         loading={dataLoading}
         error={dataError}
+        failedCourses={failedCourses}
         onSelectCourse={handleSelectCourse}
       />
     )

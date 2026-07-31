@@ -17,7 +17,7 @@ function Sidebar({ active, onHome, onReports, onAccount, onHelp }) {
         <span>Home</span>
       </button>
 
-      {/* Reports — shows all generated AI reports across every course */}
+      {/* Reports — shows all built AI reports across every course */}
       <button
         type="button"
         className={`sidebar-item${active === 'reports' ? ' sidebar-item--active' : ''}`}
