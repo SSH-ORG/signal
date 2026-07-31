@@ -3,10 +3,10 @@ import { syncCourse } from '../lib/api'
 import './Screens.css'
 
 // Module-scoped (not component state) so it survives navigating away and back —
-// skips re-syncing a course that was already synced in the last 30s, so quick
+// skips re-syncing a course that was already synced in the last 10s, so quick
 // back-and-forth navigation doesn't spam Google's API
 const lastSyncedAt = new Map()
-const SYNC_DEBOUNCE_MS = 30_000
+const SYNC_DEBOUNCE_MS = 10_000
 
 // Second screen — lists assignment titles for the selected class.
 // Clicking an assignment drills down into AssignmentDetailPage.
