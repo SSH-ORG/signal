@@ -26,11 +26,11 @@ export async function getGoogleCoursework() {
   return response.json()
 }
 
-// Imports a specific Google Classroom assignment and its submissions into our database
+// Syncs a specific Google Classroom assignment and its submissions into our database
 // context is optional — the teacher-reviewed mental model/reference material text from the
-// Assignment Detail screen. Only used the first time an assignment is imported (ignored on re-sync).
-export async function importCoursework(googleCourseworkId, courseId, context, courseName = '') {
-  const response = await fetch(`${API_BASE_URL}/api/google/coursework/${googleCourseworkId}/import`, {
+// Assignment Detail screen. Only used the first time an assignment is synced (ignored on re-sync).
+export async function syncCoursework(googleCourseworkId, courseId, context, courseName = '') {
+  const response = await fetch(`${API_BASE_URL}/api/google/coursework/${googleCourseworkId}/sync`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -38,7 +38,7 @@ export async function importCoursework(googleCourseworkId, courseId, context, co
   })
   if (!response.ok) {
     const err = await response.json()
-    throw new Error(err.detail || 'Failed to import assignment')
+    throw new Error(err.detail || 'Failed to sync assignment')
   }
   return response.json()
 }
@@ -56,7 +56,7 @@ export async function syncCourse(courseId, courseName = '') {
   return response.json()
 }
 
-// Updates the mental model/reference material context used by the AI report for an already-imported assignment
+// Updates the mental model/reference material context used by the AI report for an already-synced assignment
 export async function updateCourseworkContext(courseworkId, context) {
   const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}`, {
     method: 'PATCH',
@@ -98,7 +98,7 @@ export async function getGCDescription(googleCourseworkId, courseId) {
 }
 
 // Returns all assignments the teacher has already synced into Signal
-export async function getImportedCoursework() {
+export async function getSyncedCoursework() {
   const response = await fetch(`${API_BASE_URL}/api/coursework/`, {
     credentials: 'include',
   })
@@ -187,11 +187,55 @@ export async function emailReport(courseworkId) {
   return response.json()
 }
 
-// Sends the whole browser to Google's consent screen (via our backend).
-// This must be a full page redirect rather than a fetch, since Google needs
-// to redirect the actual browser tab through its login flow and back.
-export function redirectToGoogleLogin() {
-  window.location.href = `${API_BASE_URL}/auth/google`
+// Opens Google's consent screen in a popup instead of navigating the main window,
+// so Google's own page never becomes part of the main window's browser history —
+// that's what avoids the "back button lands on a stale, already-used Google page"
+// problem a full-page redirect through Google leaves behind.
+// Resolves true once the popup's backend callback confirms login succeeded, or
+// false if the teacher closes the popup without completing it (or the popup was
+// blocked and we fell back to a full-page redirect instead, which never resolves
+// this promise at all since the page navigates away).
+export function loginWithGooglePopup() {
+  const url = `${API_BASE_URL}/auth/google`
+  const width = 500
+  const height = 650
+  const left = window.screenX + (window.outerWidth - width) / 2
+  const top = window.screenY + (window.outerHeight - height) / 2
+
+  // Must be called synchronously from the click handler with no `await` before
+  // it — browsers silently block popups opened after any async delay
+  const popup = window.open(url, 'signal-google-login', `width=${width},height=${height},left=${left},top=${top}`)
+
+  if (!popup) {
+    // Blocked — fall back to the old full-page redirect rather than failing silently
+    window.location.href = url
+    return Promise.resolve(false)
+  }
+
+  return new Promise((resolve) => {
+    function cleanup() {
+      window.removeEventListener('message', handleMessage)
+      clearInterval(closeCheck)
+      if (!popup.closed) popup.close()
+    }
+
+    function handleMessage(event) {
+      if (event.origin !== API_BASE_URL || event.data?.type !== 'signal-auth-success') return
+      cleanup()
+      resolve(true)
+    }
+
+    // Also resolves if the teacher closes the popup themselves without finishing
+    // login, so the caller isn't left waiting forever
+    const closeCheck = setInterval(() => {
+      if (popup.closed) {
+        cleanup()
+        resolve(false)
+      }
+    }, 500)
+
+    window.addEventListener('message', handleMessage)
+  })
 }
 
 // Asks the backend who's currently logged in, based on the session cookie.
@@ -241,7 +285,7 @@ export async function updateProfile(fields) {
 }
 
 // Permanently deletes the teacher's account and all their data (cascades
-// through their imported coursework, submissions, and reports).
+// through their synced coursework, submissions, and reports).
 export async function deleteAccount() {
   const response = await fetch(`${API_BASE_URL}/auth/account`, {
     method: 'DELETE',

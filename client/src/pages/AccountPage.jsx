@@ -217,7 +217,7 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
           {confirmingDelete && (
             <div className="account-delete-confirm">
               <p>
-                This permanently deletes your account and all imported assignments, submissions,
+                This permanently deletes your account and all synced assignments, submissions,
                 and reports. This can&apos;t be undone.
               </p>
               {deleteError && <p className="screen-status screen-status--error">{deleteError}</p>}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getReport, generateReport, emailReport, importCoursework, updateCourseworkContext, getGCRubric, getGCDescription, getSubmissions, generateIndividualReport } from '../lib/api'
+import { getReport, generateReport, emailReport, syncCoursework, updateCourseworkContext, getGCRubric, getGCDescription, getSubmissions, generateIndividualReport } from '../lib/api'
 import Icon from '../components/Icon'
 import ReportBody, { IndividualReportSummary } from '../components/ReportBody'
 import { parseFlaggedStudents } from '../lib/reportParsing'
@@ -22,25 +22,25 @@ function extractContextSection(savedContext, label) {
 // Third screen — shown when a teacher clicks into a specific assignment.
 // Lets the teacher review/edit the mental model and supporting materials,
 // sync submissions, and generate/view the AI confusion report.
-function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange }) {
-  // Local copy of the imported record so this screen can react immediately to
+function AssignmentDetailPage({ assignment, syncedRecord, onBack, onDataChange }) {
+  // Local copy of the synced record so this screen can react immediately to
   // sync/context-save actions without waiting on a parent re-fetch
-  const [record, setRecord] = useState(importedRecord)
+  const [record, setRecord] = useState(syncedRecord)
   // 'context' | 'report' — only relevant once record exists (before that,
   // there's nothing to report on yet, so Context is the only thing shown)
   const [activeTab, setActiveTab] = useState('context')
   // The teacher's own words — restored from the saved context, never touched by syncing
   const [mentalModelText, setMentalModelText] = useState(
-    () => extractContextSection(importedRecord?.context, 'Mental Model')
+    () => extractContextSection(syncedRecord?.context, 'Mental Model')
   )
   // Restored from the saved context like Mental Model/Rubric, so a teacher's edits
   // survive a revisit — falls back to the live Classroom description only the first
   // time, before anything has ever been saved.
   const [descriptionText, setDescriptionText] = useState(
-    () => extractContextSection(importedRecord?.context, 'Assignment Description') || assignment.description || ''
+    () => extractContextSection(syncedRecord?.context, 'Assignment Description') || assignment.description || ''
   )
   const [rubricText, setRubricText] = useState(
-    () => extractContextSection(importedRecord?.context, 'Rubric')
+    () => extractContextSection(syncedRecord?.context, 'Rubric')
   )
   // Each reference material can be left out of what's actually sent to the AI
   // while still staying visible/editable — e.g. excluding the rubric if a
@@ -58,7 +58,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
   const [actionError, setActionError] = useState(null)
 
   const [report, setReport] = useState(null)
-  const [loadingReport, setLoadingReport] = useState(!!importedRecord)
+  const [loadingReport, setLoadingReport] = useState(!!syncedRecord)
   const [generating, setGenerating] = useState(false)
   const [reportError, setReportError] = useState(null)
   const [emailing, setEmailing] = useState(false)
@@ -77,7 +77,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
 
   const courseworkId = record?.coursework_id
 
-  // Load the existing classwide report (if any) once the assignment has been imported
+  // Load the existing classwide report (if any) once the assignment has been synced
   useEffect(() => {
     if (!courseworkId) return
     getReport(courseworkId)
@@ -141,7 +141,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
   // First sync now happens automatically when a teacher opens or revisits the
   // Coursework screen (see AssignmentsPage), so by the time this page is reached
   // an assignment is normally already synced — this button just refreshes the
-  // submission count. It's still able to create the record too (importCoursework
+  // submission count. It's still able to create the record too (syncCoursework
   // is idempotent either way), which only matters if this page is somehow reached
   // before that automatic sync has run yet. Deliberately does NOT touch the
   // description — see handleSyncDescription for that, same pattern as Sync Rubric.
@@ -149,7 +149,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
     setSyncingSubmissions(true)
     setActionError(null)
     try {
-      const result = await importCoursework(
+      const result = await syncCoursework(
         assignment.google_coursework_id, assignment.course_id, combinedContext(), assignment.course_name
       )
       if (!record) setLoadingReport(true) // first sync — the effect above is about to fetch the (nonexistent) report
@@ -337,7 +337,7 @@ function AssignmentDetailPage({ assignment, importedRecord, onBack, onDataChange
           {actionError && <p className="report-error">{actionError}</p>}
         </div>
 
-        {/* Once imported, Context and AI Report are separate tabs — before
+        {/* Once synced, Context and AI Report are separate tabs — before
             that, there's nothing to report on yet, so just Context shows. */}
         {record && (
           <div className="tab-list" role="tablist">

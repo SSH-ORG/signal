@@ -10,7 +10,7 @@ const SYNC_DEBOUNCE_MS = 30_000
 
 // Second screen — lists assignment titles for the selected class.
 // Clicking an assignment drills down into AssignmentDetailPage.
-function AssignmentsPage({ courseId, courseName, gcAssignments, imported, onBack, onSelectAssignment, onDataChange }) {
+function AssignmentsPage({ courseId, courseName, gcAssignments, synced, onBack, onSelectAssignment, onDataChange }) {
   const [searchQuery, setSearchQuery] = useState('')
 
   // Syncing is automatic — opening or revisiting a course's Coursework screen
@@ -39,11 +39,11 @@ function AssignmentsPage({ courseId, courseName, gcAssignments, imported, onBack
     })
   }, [gcAssignments, courseId, searchQuery])
 
-  const importedByGcId = useMemo(() => {
+  const syncedByGcId = useMemo(() => {
     const map = new Map()
-    for (const cw of imported) map.set(cw.google_coursework_id, cw)
+    for (const cw of synced) map.set(cw.google_coursework_id, cw)
     return map
-  }, [imported])
+  }, [synced])
 
   return (
     <div className="screen">
@@ -74,19 +74,19 @@ function AssignmentsPage({ courseId, courseName, gcAssignments, imported, onBack
         ) : (
           <ul className="item-list">
             {assignments.map((assignment) => {
-              const importedRecord = importedByGcId.get(assignment.google_coursework_id) || null
+              const syncedRecord = syncedByGcId.get(assignment.google_coursework_id) || null
 
               return (
                 <li key={assignment.google_coursework_id}>
                   <button
                     className="item-card"
-                    onClick={() => onSelectAssignment(assignment, importedRecord)}
+                    onClick={() => onSelectAssignment(assignment, syncedRecord)}
                   >
                     <div className="item-info">
                       <span className="item-name">{assignment.title}</span>
-                      {importedRecord && (
+                      {syncedRecord && (
                         <span className="item-meta">
-                          {importedRecord.submission_count} {importedRecord.submission_count === 1 ? 'submission' : 'submissions'}
+                          {syncedRecord.submission_count} {syncedRecord.submission_count === 1 ? 'submission' : 'submissions'}
                         </span>
                       )}
                     </div>

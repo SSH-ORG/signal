@@ -16,7 +16,6 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 # We only support short-answer questions and free-form assignments (Google Doc
 # attachments only) — multiple choice questions aren't pulled in at all
 SUPPORTED_WORK_TYPES = {"SHORT_ANSWER_QUESTION", "ASSIGNMENT"}
-GOOGLE_DOC_MIMETYPE = "application/vnd.google-apps.document"
 
 
 def _auth_headers(user: User) -> dict:
@@ -81,32 +80,19 @@ async def _extract_submission_content(submission: dict, user: User, db: Session,
             title = drive_file.get("title", "Document")
 
             try:
-                # Confirm it's actually a Google Doc before attempting export —
-                # Slides can also export to text/plain, which would otherwise
-                # let non-Doc files slip through silently
-                meta_resp = await _get_with_refresh(
+                # A Doc's Drive file ID doubles as its Docs API document ID, so this
+                # only ever needs the documents.readonly scope — not full Drive access.
+                # If the file isn't actually a Doc (e.g. Slides, Sheets), this call
+                # fails on its own instead of needing a separate mimeType pre-check.
+                doc_resp = await _get_with_refresh(
                     client,
-                    f"https://www.googleapis.com/drive/v3/files/{file_id}",
+                    f"https://docs.googleapis.com/v1/documents/{file_id}",
                     user, db,
-                    params={"fields": "mimeType"},
                     timeout=10.0,
                 )
-                if meta_resp.status_code != 200 or meta_resp.json().get("mimeType") != GOOGLE_DOC_MIMETYPE:
-                    continue
-
-                export_resp = await _get_with_refresh(
-                    client,
-                    f"https://www.googleapis.com/drive/v3/files/{file_id}/export",
-                    user, db,
-                    params={"mimeType": "text/plain"},
-                    timeout=10.0,
-                )
-                if export_resp.status_code == 200:
-                    content = export_resp.text.strip()
-                    if content:
-                        texts.append(content)
-                    else:
-                        texts.append(f"[Empty document: {title}]")
+                if doc_resp.status_code == 200:
+                    content = _extract_doc_text(doc_resp.json()).strip()
+                    texts.append(content if content else f"[Empty document: {title}]")
                 else:
                     texts.append(f"[Could not read: {title}]")
             except Exception:
@@ -115,6 +101,22 @@ async def _extract_submission_content(submission: dict, user: User, db: Session,
         return "\n\n".join(texts) if texts else None
 
     return None
+
+
+def _extract_doc_text(document: dict) -> str:
+    # Walks a Docs API document's structured body and concatenates the plain text
+    # of every paragraph — tables/images/section breaks are skipped since the AI
+    # only needs readable prose, not layout
+    pieces = []
+    for element in document.get("body", {}).get("content", []):
+        paragraph = element.get("paragraph")
+        if not paragraph:
+            continue
+        for el in paragraph.get("elements", []):
+            text_run = el.get("textRun")
+            if text_run:
+                pieces.append(text_run.get("content", ""))
+    return "".join(pieces)
 
 
 def _parse_due_date(cw: dict) -> datetime | None:
@@ -223,7 +225,9 @@ def _cleanup_archived_courses(archived_gc_course_ids: list, user: User, db: Sess
     # Same explicit-signal reasoning as deleted assignments — Google directly
     # reports a course as ARCHIVED (not just absent from a fetch), so it's safe
     # to remove any assignments synced from it. A teacher who wants to keep a
-    # record of an archived class's reports still has them in their email.
+    # record of a report before its class is archived can send it to themselves
+    # first via the "Email report" button — that's a deliberate action on their
+    # part, not something Signal does automatically on their behalf.
     # Scoped to ARCHIVED only — SUSPENDED/DECLINED/PROVISIONED are different
     # situations (a policy issue, a declined invite, an unaccepted course) and
     # aren't necessarily "this class is over," so they're left untouched.
@@ -352,7 +356,13 @@ async def fetch_google_coursework(user: User, db: Session) -> dict:
 
         all_coursework = []
         failed_course_names = []  # Courses whose coursework fetch genuinely failed (not just empty)
-        course_student_counts = {}  # course_id -> roster size, tracked separately so it's not lost for courses with 0 assignments
+
+        # Deletion reconciliation and a roster fetch both used to run here on every single
+        # visit to this screen, for every course — real, duplicated work, since the exact
+        # same reconciliation already runs the moment a teacher opens that course's
+        # Coursework screen, and student_count isn't shown anywhere on this screen anyway.
+        # Dropping both removed the redundant network round-trip chain that was causing a
+        # multi-second load delay on every Courses visit.
 
         # Step 2 — for each course, get all its assignments. Paginated — a class's
         # coursework list can exceed a single page over the course of a semester.
@@ -390,13 +400,6 @@ async def fetch_google_coursework(user: User, db: Session) -> dict:
             if fetch_failed:
                 failed_course_names.append(course.get("name", "Untitled course"))
 
-            # Reconcile against whatever we already have synced for this course before
-            # narrowing the list further — a stored assignment missing here is only
-            # confirmed deleted after the direct per-assignment check inside this call
-            if not fetch_failed:
-                live_ids = {cw["id"] for cw in coursework_list}
-                await _reconcile_missing_coursework(course["id"], course.get("name", ""), live_ids, user, db, client)
-
             # Only short-answer questions and free-form assignments are supported
             coursework_list = [cw for cw in coursework_list if cw.get("workType") in SUPPORTED_WORK_TYPES]
 
@@ -404,12 +407,6 @@ async def fetch_google_coursework(user: User, db: Session) -> dict:
             # (so there's nothing to sync), and DELETED is, per Google's own docs,
             # still returned to the teacher for a while after being removed
             coursework_list = [cw for cw in coursework_list if cw.get("state") == "PUBLISHED"]
-
-            # Fetched once per course (not per assignment) — every assignment in this
-            # course shares the same roster, so this is the one place that needs it
-            roster = await _fetch_course_roster(course["id"], user, db, client)
-            student_count = len(roster) or None
-            course_student_counts[course["id"]] = student_count
 
             for cw in coursework_list:
                 due_date = _parse_due_date(cw)
@@ -420,7 +417,6 @@ async def fetch_google_coursework(user: User, db: Session) -> dict:
                     "description": cw.get("description", ""),  # Pre-fills the teacher's context field
                     "course_name": course.get("name", ""),  # Which class this assignment belongs to
                     "due_date": due_date.isoformat() if due_date else None,
-                    "student_count": student_count,
                     "created_at": cw.get("creationTime"),  # Always present — Classroom's own ISO timestamp
                 })
 
@@ -431,7 +427,6 @@ async def fetch_google_coursework(user: User, db: Session) -> dict:
             {
                 "course_id": course["id"],
                 "course_name": course.get("name", ""),
-                "student_count": course_student_counts.get(course["id"]),
             }
             for course in courses
         ]
@@ -459,7 +454,7 @@ async def fetch_google_coursework(user: User, db: Session) -> dict:
     return {"courses": courses_out, "coursework": all_coursework, "failed_courses": failed_course_names}
 
 
-async def import_google_coursework(
+async def sync_coursework(
     google_coursework_id: str,
     course_id: str,
     user: User,
@@ -470,12 +465,12 @@ async def import_google_coursework(
     student_count: int | None = None,
     roster: dict | None = None,
 ) -> dict:
-    # Imports a Google Classroom assignment into our database
-    # If it was already imported before, syncs any new submissions instead of blocking
+    # Syncs a Google Classroom assignment into our database
+    # If it was already synced before, syncs any new submissions instead of blocking
     # due_date/student_count are optional — pass them through when the caller already
     # has fresh values (e.g. from fetch_google_coursework) to avoid re-fetching them here
 
-    # Check if this assignment has been imported before
+    # Check if this assignment has been synced before
     existing = db.query(Coursework).filter(
         Coursework.google_coursework_id == google_coursework_id,
         Coursework.user_id == user.user_id,
@@ -503,7 +498,7 @@ async def import_google_coursework(
                 coursework.student_count = student_count
             db.commit()
         else:
-            # First time importing — fetch assignment details and create a record
+            # First time syncing — fetch assignment details and create a record
             cw_resp = await _get_with_refresh(
                 client,
                 f"{CLASSROOM_BASE}/courses/{course_id}/courseWork/{google_coursework_id}",
@@ -635,7 +630,7 @@ async def sync_course_coursework(course_id: str, course_name: str, user: User, d
             if cw.get("workType") in SUPPORTED_WORK_TYPES and cw.get("state") == "PUBLISHED"
         ]
 
-        # Fetched once for the whole course and reused below — import_google_coursework
+        # Fetched once for the whole course and reused below — sync_coursework
         # would otherwise redundantly re-fetch the same roster for every assignment
         roster = await _fetch_course_roster(course_id, user, db, client)
         student_count = len(roster) or None
@@ -643,7 +638,7 @@ async def sync_course_coursework(course_id: str, course_name: str, user: User, d
     synced_count = 0
     for cw in coursework_list:
         due_date = _parse_due_date(cw)
-        await import_google_coursework(
+        await sync_coursework(
             google_coursework_id=cw["id"],
             course_id=course_id,
             user=user,

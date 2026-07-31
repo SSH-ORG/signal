@@ -1,6 +1,6 @@
 import os
 from fastapi import HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse
 from authlib.integrations.starlette_client import OAuth
 from sqlalchemy.orm import Session
 from starlette.requests import Request
@@ -24,7 +24,7 @@ oauth.register(
             "https://www.googleapis.com/auth/classroom.coursework.me.readonly "
             "https://www.googleapis.com/auth/classroom.student-submissions.students.readonly "
             "https://www.googleapis.com/auth/classroom.rosters.readonly "  # Needed to fetch student names
-            "https://www.googleapis.com/auth/drive.readonly"  # Needed to read Google Doc submission content
+            "https://www.googleapis.com/auth/documents.readonly"  # Needed to read Google Doc submission content
         ),
         "access_type": "offline",  # Gives us a refresh token so we don't lose access when the access token expires
         "prompt": "consent",       # Forces Google to always return a refresh token
@@ -83,8 +83,27 @@ async def google_callback(request: Request, db: Session):
     # Save the user's ID in their session cookie
     request.session["user_id"] = user.user_id
 
-    # Send them to the frontend dashboard
-    return RedirectResponse(url=os.getenv("FRONTEND_URL", "http://localhost:5173"))
+    # This route is opened in a popup, not the main window (see loginWithGooglePopup
+    # in api.js) — that's what keeps Google's own consent page out of the main
+    # window's browser history entirely, avoiding the stale-back-button problem a
+    # full-page redirect through Google would otherwise leave behind. So instead of
+    # redirecting, tell the opener (the main window) login succeeded and close this
+    # popup. Falls back to a normal redirect if there's no opener — e.g. someone
+    # navigated here directly rather than through the popup flow.
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    return HTMLResponse(f"""<!DOCTYPE html>
+<html>
+<body>
+<script>
+  if (window.opener) {{
+    window.opener.postMessage({{ type: "signal-auth-success" }}, "{frontend_url}");
+    window.close();
+  }} else {{
+    window.location.href = "{frontend_url}";
+  }}
+</script>
+</body>
+</html>""")
 
 
 # Clears the session cookie — logs the teacher out

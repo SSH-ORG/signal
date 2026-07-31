@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import Logo from '../components/Logo'
 import Icon from '../components/Icon'
 import ParticleBackground from '../components/ParticleBackground'
-import { redirectToGoogleLogin } from '../lib/api'
+import { loginWithGooglePopup } from '../lib/api'
 import './AuthPage.css'
 
 // The marketing/landing page shown before sign-in — App.jsx only renders this
 // when there's no active session. Structured like a typical product landing
 // page (nav -> hero -> features -> demo video -> closing CTA -> footer),
 // with the demo section and closing CTA fading in as the user scrolls to them.
-function AuthPage() {
+function AuthPage({ onLoginSuccess }) {
   // 'checking' | 'ok' | 'error' — purely informational; doesn't block the page
   const [serverStatus, setServerStatus] = useState('checking')
   // null while unknown, then true/false once we've checked whether a demo
@@ -29,6 +29,11 @@ function AuthPage() {
       .catch(() => setVideoAvailable(false))
   }, [])
 
+  async function handleSignIn() {
+    const success = await loginWithGooglePopup()
+    if (success) onLoginSuccess()
+  }
+
   return (
     <div className="landing">
       <nav className="landing-nav">
@@ -41,7 +46,7 @@ function AuthPage() {
           >
             For students
           </button>
-          <button className="google-button google-button--nav" type="button" onClick={redirectToGoogleLogin}>
+          <button className="google-button google-button--nav" type="button" onClick={handleSignIn}>
             <GoogleIcon />
             Sign in
           </button>
@@ -66,7 +71,7 @@ function AuthPage() {
             </p>
           )}
 
-          <button className="google-button google-button--hero" type="button" onClick={redirectToGoogleLogin}>
+          <button className="google-button google-button--hero" type="button" onClick={handleSignIn}>
             <GoogleIcon />
             Continue with Google
           </button>
@@ -108,7 +113,7 @@ function AuthPage() {
 
       <Reveal className="landing-cta">
         <h2>Ready to see your class clearly?</h2>
-        <button className="google-button google-button--hero" type="button" onClick={redirectToGoogleLogin}>
+        <button className="google-button google-button--hero" type="button" onClick={handleSignIn}>
           <GoogleIcon />
           Continue with Google
         </button>

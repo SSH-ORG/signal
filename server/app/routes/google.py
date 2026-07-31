@@ -11,9 +11,9 @@ from app.controllers import google as google_controller
 router = APIRouter()
 
 
-# Request body for the import endpoint — frontend must send the course_id
+# Request body for the sync endpoint — frontend must send the course_id
 # alongside the request so we know which Google Classroom course to pull from
-class ImportRequest(BaseModel):
+class SyncCourseworkRequest(BaseModel):
     course_id: str            # The Google Classroom course ID the assignment belongs to
     context: str | None = None  # Teacher-reviewed context/rubric; falls back to the Classroom description if omitted
     course_name: str = ""     # Course name stored so it's available even after a course is archived
@@ -51,17 +51,17 @@ async def get_rubric(
     return await google_controller.fetch_rubric(google_coursework_id, course_id, user, db)
 
 
-# POST /api/google/coursework/{google_coursework_id}/import
-# Imports a specific assignment and all its student submissions into our database
-# After importing, the assignment will appear in GET /api/coursework
-@router.post("/coursework/{google_coursework_id}/import")
-async def import_coursework(
+# POST /api/google/coursework/{google_coursework_id}/sync
+# Syncs a specific assignment and all its student submissions into our database
+# After syncing, the assignment will appear in GET /api/coursework
+@router.post("/coursework/{google_coursework_id}/sync")
+async def sync_single_coursework(
     google_coursework_id: str,
-    body: ImportRequest,
+    body: SyncCourseworkRequest,
     user: User = Depends(require_login),
     db: Session = Depends(get_db),
 ):
-    return await google_controller.import_google_coursework(
+    return await google_controller.sync_coursework(
         google_coursework_id, body.course_id, user, db,
         context=body.context, course_name=body.course_name,
         due_date=body.due_date, student_count=body.student_count,
