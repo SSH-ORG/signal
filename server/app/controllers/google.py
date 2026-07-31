@@ -139,9 +139,11 @@ def _parse_due_date(cw: dict) -> datetime | None:
 
 
 async def _fetch_course_roster(course_id: str, user: User, db: Session, client: httpx.AsyncClient) -> dict:
-    # Fetches every student in a course, returning {google_user_id: full_name}.
-    # Paginated — a large class's roster can exceed a single page. Requires the
-    # classroom.rosters.readonly scope; returns {} if that hasn't been granted.
+    # Fetches every student in a course, returning {google_user_id: {"name": ..., "email": ...}}.
+    # Paginated — a large class's roster can exceed a single page. name requires the
+    # classroom.rosters.readonly scope; email additionally requires classroom.profile.emails —
+    # emailAddress is simply omitted from Google's response without that scope granted,
+    # so email ends up None for teachers who haven't re-consented since it was added.
     roster = {}
     page_token = None
 
@@ -159,15 +161,28 @@ async def _fetch_course_roster(course_id: str, user: User, db: Session, client: 
         page = resp.json()
         for student in page.get("students", []):
             uid = student.get("userId")
-            name = student.get("profile", {}).get("name", {}).get("fullName")
+            profile = student.get("profile", {})
+            name = profile.get("name", {}).get("fullName")
             if uid and name:
-                roster[uid] = name
+                roster[uid] = {"name": name, "email": profile.get("emailAddress")}
 
         page_token = page.get("nextPageToken")
         if not page_token:
             break
 
     return roster
+
+
+async def fetch_course_roster(course_id: str, user: User, db: Session) -> list[dict]:
+    # Public, on-demand read of a course's roster — used by the Students tab so
+    # non-submitters can be listed too, without persisting roster data anywhere.
+    # A pure read, same pattern as fetch_rubric/fetch_assignment_description.
+    async with httpx.AsyncClient() as client:
+        roster = await _fetch_course_roster(course_id, user, db, client)
+    return [
+        {"google_user_id": uid, "name": entry["name"], "email": entry["email"]}
+        for uid, entry in roster.items()
+    ]
 
 
 async def _reconcile_missing_coursework(
@@ -556,7 +571,9 @@ async def sync_coursework(
         if roster:
             for existing_sub in coursework.submissions:
                 if existing_sub.student_name is None and existing_sub.google_user_id:
-                    existing_sub.student_name = roster.get(existing_sub.google_user_id)
+                    entry = roster.get(existing_sub.google_user_id)
+                    if entry:
+                        existing_sub.student_name = entry["name"]
 
         for sub in submissions_data:
             # Skip if we already have this submission

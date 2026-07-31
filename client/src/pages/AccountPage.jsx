@@ -135,16 +135,13 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
         </section>
 
         <section className="detail-section" id="notifications">
-          <h2 className="detail-section-title">Email Notifications</h2>
-          <div className="account-notif-toggle-row">
-            <div>
-              <span className="account-notif-label">Email me a summary</span>
-              <p className="detail-section-hint">Emailed once reports are ready to be built or already are built.</p>
-            </div>
+          <div className="account-notif-header-row">
+            <h2 className="detail-section-title">Email Notifications</h2>
             <button
               type="button"
               role="switch"
               aria-checked={emailEnabled}
+              aria-label="Email notifications"
               className={`account-toggle${emailEnabled ? ' account-toggle--on' : ''}`}
               onClick={handleToggleEmailEnabled}
               disabled={savingNotifications}
@@ -152,30 +149,25 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
               <span className="account-toggle-knob" />
             </button>
           </div>
+          <p className="detail-section-hint">
+            Email me once assignments reach their due date or have enough submissions to build a report.
+          </p>
 
           {emailEnabled && (
-            <div className="account-notif-options">
+            <div className="account-notif-toggle-group">
               {[
-                { value: 'daily', label: 'Each day', hint: 'All reports from the past 24 hours' },
-                { value: 'weekly', label: 'Each week', hint: 'All reports from the past week, emailed each Monday' },
-              ].map(({ value, label, hint }) => (
-                <label
+                { value: 'daily', label: 'Each day' },
+                { value: 'weekly', label: 'Each week' },
+              ].map(({ value, label }) => (
+                <button
                   key={value}
-                  className={`account-notif-option${notificationPref === value ? ' account-notif-option--active' : ''}`}
+                  type="button"
+                  className={`account-notif-toggle-btn${notificationPref === value ? ' account-notif-toggle-btn--active' : ''}`}
+                  onClick={() => handleSetNotificationPref(value)}
+                  disabled={savingNotifications}
                 >
-                  <input
-                    type="radio"
-                    name="notification-cadence"
-                    className="account-notif-radio"
-                    checked={notificationPref === value}
-                    onChange={() => handleSetNotificationPref(value)}
-                    disabled={savingNotifications}
-                  />
-                  <span>
-                    <span className="account-notif-label">{label}</span>
-                    <span className="account-notif-hint">{hint}</span>
-                  </span>
-                </label>
+                  {label}
+                </button>
               ))}
             </div>
           )}

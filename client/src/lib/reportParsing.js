@@ -48,7 +48,7 @@ export function stripBold(text) {
 
 // Pulls flagged students out of a classwide report, paired with which
 // misconception group (if any) they fall under — used by AssignmentDetailPage
-// to build the Flagged tab without waiting on any individual report to exist first
+// to build the Student tab without waiting on any student report to exist first
 export function parseFlaggedStudents(classwideContent) {
   if (!classwideContent) return []
   const sections = splitSections(classwideContent)

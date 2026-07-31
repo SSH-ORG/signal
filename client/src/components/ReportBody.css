@@ -48,6 +48,7 @@
 .section-banner {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   min-height: 56px;
   padding: 14px 18px;
@@ -70,6 +71,25 @@
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
+/* ── Top layout: Class Summary on the left, the 4 section cards as a 2x2
+   grid of squares on the right. The summary is downsized vertically instead
+   of the old horizontal narrowing (centered, less than full width) — it
+   sizes to its own (shorter) content and sits centered within the row,
+   instead of being stretched to match the taller grid beside it. ── */
+
+.classwide-top-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: center;
+}
+
+@media (max-width: 700px) {
+  .classwide-top-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ── Class Summary box ── */
 
 .overview-box {
@@ -81,10 +101,12 @@
   flex-direction: column;
   overflow: hidden;
   position: relative;
-  /* Narrower than the full-width card row below it and centered, so it reads
-     as a headline callout sitting above the supporting detail cards */
-  max-width: 70%;
-  margin: 0 auto;
+  /* A size floor so it doesn't look tiny/awkward next to the taller 2x2 grid
+     when the summary itself is short — still sizes taller than this on its
+     own if the content needs more room. A gentle square-leaning ratio (not a
+     strict 1:1 matching the full grid height) so it reads closer to square. */
+  min-height: 280px;
+  aspect-ratio: 5 / 4;
   /* The whole card is a button now — reset default button chrome. Browsers
      apply their own padding to <button> by default, which was pushing the
      banner in from the card's edges instead of sitting flush against them. */
@@ -101,16 +123,12 @@
   box-shadow: var(--shadow);
 }
 
-@media (max-width: 700px) {
-  .overview-box {
-    max-width: 100%;
-  }
-}
-
 .overview-body {
   padding: 16px 44px 20px 20px;
   display: flex;
   flex-direction: column;
+  flex: 1;
+  justify-content: center;
   gap: 10px;
 }
 
@@ -119,14 +137,44 @@
   font-size: 0.9rem;
   color: var(--text-h);
   line-height: 1.65;
+  /* Safety cap for an unusually long AI summary — the modal still shows the
+     full text regardless */
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* At-a-glance verdict badge (Needs Attention / Mixed Understanding / Strong
+   Understanding) — a categorical call instead of a precise percentage, since
+   that's closer to what a teacher actually needs from a glance */
+.confusion-badge {
+  align-self: flex-start;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--badge-color);
+  background: color-mix(in srgb, var(--badge-color) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--badge-color) 35%, transparent);
+  border-radius: 100px;
+  padding: 4px 10px;
 }
 
 /* ── Section cards (Flagged Students / Common Misconception / Solid Themes / Next Steps) ── */
 
 .report-card-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
   gap: 14px;
+  aspect-ratio: 1 / 1;
+}
+
+@media (max-width: 700px) {
+  .report-card-row {
+    aspect-ratio: auto;
+  }
 }
 
 .report-card {
@@ -292,6 +340,10 @@
   line-height: 1;
 }
 
+.steps-number-icon {
+  font-size: 14px;
+}
+
 .steps-text {
   font-size: 0.9rem;
   color: var(--text-h);
@@ -303,15 +355,15 @@
   color: var(--text-h);
 }
 
-/* ── Individual student report summary (Flagged tab popup) ── */
+/* ── Student report summary (Student tab popup) ── */
 
-.individual-summary {
+.student-summary {
   display: flex;
   flex-direction: column;
   gap: 18px;
 }
 
-.individual-summary-text {
+.student-summary-text {
   margin: 0;
   font-size: 0.9rem;
   color: var(--text-h);
@@ -322,10 +374,9 @@
    a colored left edge matching that topic's color) instead of just floating
    in the same flow with only spacing between them — makes it obvious at a
    glance where one section ends and the next begins. */
-.individual-summary-box {
+.student-summary-box {
   background: var(--bg);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--box-color, var(--border-strong));
+  border: 1px solid var(--box-color, var(--border-strong));
   border-radius: 8px;
   padding: 12px 14px;
   display: flex;
@@ -333,7 +384,7 @@
   gap: 8px;
 }
 
-.individual-summary-box-title {
+.student-summary-box-title {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -343,7 +394,40 @@
   color: var(--text-h);
 }
 
-.individual-quality-flag {
+/* Replaces the Next Step box's normal content while a teacher tailors the
+   wording for "Email to student" — sits inside the same box (no extra
+   background/border of its own) so the edit reads as part of the report,
+   not a separate detached form */
+.next-step-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.next-step-edit-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.next-step-edit-textarea {
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--text-h);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.next-step-edit-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.student-quality-flag {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -357,37 +441,52 @@
   padding: 8px 12px;
 }
 
-.individual-quality-icon {
+.student-quality-icon {
   font-size: 16px;
 }
 
-.individual-grade-box {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.individual-grade-box p {
-  margin: 0;
-  font-size: 0.88rem;
-  color: var(--text-h);
-  line-height: 1.5;
-}
-
-.individual-summary-columns {
+.student-summary-columns {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
 
 @media (max-width: 480px) {
-  .individual-summary-columns {
+  .student-summary-columns {
     grid-template-columns: 1fr;
   }
+}
+
+/* Collapsed by default (see the component) — a small text toggle rather than
+   a styled button, so it doesn't visually compete with the actual report content */
+.student-submission-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.student-submission-toggle-btn:hover {
+  color: var(--text-h);
+}
+
+.student-submission-text {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  color: var(--text-h);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
 }
 
 
@@ -431,7 +530,6 @@
 .report-modal {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-top: 4px solid var(--section-color);
   border-radius: 12px;
   box-shadow: var(--shadow);
   max-width: 520px;
@@ -508,30 +606,3 @@
   color: var(--text);
 }
 
-.overview-stats {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  border-top: 1px solid var(--border);
-  padding-top: 16px;
-}
-
-.overview-stat {
-  flex: 1;
-  min-width: 100px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  text-align: center;
-}
-
-.overview-stat-number {
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: var(--text-h);
-}
-
-.overview-stat-label {
-  font-size: 0.75rem;
-  color: var(--text);
-}

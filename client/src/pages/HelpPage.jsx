@@ -30,9 +30,9 @@ function HelpPage() {
             <div className="help-step-body">
               <h2 className="help-step-title">Sync an assignment</h2>
               <p className="help-step-text">
-                After choosing an assignment, click the sync icon next to the submission count.
-                The first click syncs the assignment itself into Signal; clicking it again pulls
-                in any new submissions since the last sync.
+                After choosing an assignment, its data is synced to our app and you land on its
+                detail page. Need to refresh submissions? Click the sync icon next to the
+                submission count.
               </p>
             </div>
           </div>
@@ -45,12 +45,13 @@ function HelpPage() {
                 In the Context tab, use the <strong>Mental Model</strong> box to describe what student
                 understanding looks like — that's what the AI compares submissions against. The
                 <strong> Reference Materials</strong> column has your assignment description and rubric
-                from Google Classroom (click <strong>Sync Rubric</strong> to add it in), each with its
-                own toggle to include or exclude it from the report.
+                from Google Classroom, each with its own toggle to include or exclude it from the
+                report and its own sync button — <strong>Sync Description</strong> or
+                <strong> Sync Rubric</strong> — to pull in the latest version from Google Classroom.
               </p>
               <p className="help-step-text">
-                Without a mental model or rubric, the AI will still analyze submissions but won't
-                know what the expected answer is, so the report will be less targeted.
+                Without context (mental model/rubric/assignment description), the AI will not
+                build a report.
               </p>
               <p className="help-step-text">
                 <strong>Reminder:</strong> use the <strong>Save Context</strong> button to save your
@@ -64,9 +65,13 @@ function HelpPage() {
             <div className="help-step-body">
               <h2 className="help-step-title">Build an AI Report</h2>
               <p className="help-step-text">
-                Once all submissions are in, click <strong>Build</strong>. The AI reads every
-                submission, compares them against your context/rubric/assignment description, and
-                produces a class-wide confusion report.
+                Once all submissions are in, go to the <strong>AI Report</strong> tab and click
+                <strong> Build</strong>. The AI reads every submission, compares them against your
+                context (mental model/rubric/assignment description), and produces a class-wide
+                confusion report.
+                You can also build a report for one specific student separately, or switch to the
+                <strong> Student</strong> view to see flagged students' reports once the classwide
+                report has been built.
               </p>
             </div>
           </div>
@@ -74,12 +79,12 @@ function HelpPage() {
           <div className="help-step">
             <div className="help-step-number">5</div>
             <div className="help-step-body">
-              <h2 className="help-step-title">View, email, or delete past reports</h2>
+              <h2 className="help-step-title">View or delete past reports</h2>
               <p className="help-step-text">
-                All reports are saved. Access them from the <strong>Reports</strong> page in the
-                sidebar — grouped by class, with filters for class and time range. From there, or
-                from the assignment's own AI Report tab, you can email a report to yourself or
-                delete it so it can be built again later.
+                All reports can be found from the <strong>Reports</strong> page in the sidebar —
+                choose a class, then an assignment to land into that assignment's AI Report tab.
+                From the Reports list itself you can delete a report — it can be built again
+                later; emailing a report to yourself is one click away on the AI Report tab.
               </p>
             </div>
           </div>
@@ -88,6 +93,14 @@ function HelpPage() {
 
         <div className="help-tip">
           <p><strong>Tip:</strong> You can refresh a report after syncing new submissions or editing the context. The latest report always replaces the previous one.</p>
+        </div>
+
+        <div className="help-tip">
+          <p>
+            <strong>Tip:</strong> In <strong>Account</strong>, turn on Email Notifications to get an
+            email once an assignment reaches its due date or has enough submissions to build a
+            report — choose whether that arrives each day or each week.
+          </p>
         </div>
 
       </main>

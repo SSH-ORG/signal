@@ -3,17 +3,17 @@ import { splitSections, findBody, parseBullets, parseGroups, stripBold } from '.
 import Icon from './Icon'
 import './ReportBody.css'
 
-// Shared AI report renderer — used on AssignmentDetailPage (classwide + individual)
+// Shared AI report renderer — used on AssignmentDetailPage (classwide + student)
 // and ReportsPage (inline expanded view).
 // mode="classwide" renders the Class Overview box + the 4 section cards
 // (Flagged Students / Common Misconception / Solid Themes / Next Steps), each
 // color-coded and opening its full detail in a modal. Any other mode
-// (individual student reports) falls back to the original stacked-sections layout.
-function ReportBody({ content, mode, totalSubmissions }) {
+// (student reports) falls back to the original stacked-sections layout.
+function ReportBody({ content, mode }) {
   const sections = splitSections(content)
 
   if (mode === 'classwide') {
-    return <ClasswideReportBody sections={sections} totalSubmissions={totalSubmissions} />
+    return <ClasswideReportBody sections={sections} />
   }
 
   return (
@@ -35,7 +35,7 @@ const SECTION_META = {
   'next-steps': { label: 'Next Steps', color: '#3b82f6', icon: 'checklist' },
 }
 
-function ClasswideReportBody({ sections, totalSubmissions }) {
+function ClasswideReportBody({ sections }) {
   const overviewBody = findBody(sections, 'Class Overview')
   const overviewDetailsBody = findBody(sections, 'Overview Details')
   const flaggedBody = findBody(sections, 'Flagged Students')
@@ -73,10 +73,18 @@ function ClasswideReportBody({ sections, totalSubmissions }) {
   const nextSteps = parseBullets(nextStepsBody)
 
   const flaggedCount = flaggedNames.length
-  const solidCount = new Set(themeGroups.flatMap(g => g.students)).size
-  const total = totalSubmissions || flaggedCount + solidCount || 1
-  const flaggedPct = Math.round((flaggedCount / total) * 100)
-  const solidPct = Math.round((solidCount / total) * 100)
+  const solidCount = new Set(themeGroups.flatMap((g) => g.students)).size
+
+  // At-a-glance verdict for the Class Summary card — a badge instead of a
+  // precise percentage, since the point is "does this need attention," not
+  // an exact number. Ratio-based (flagged vs. solid) rather than needing a
+  // total submission count, since not every submission is necessarily named
+  // in either list.
+  const confusionTier = flaggedCount === 0
+    ? { label: 'Strong Understanding', color: '#27ae60' }
+    : flaggedCount > solidCount
+      ? { label: 'Needs Attention', color: '#d93025' }
+      : { label: 'Mixed Understanding', color: '#e67e22' }
 
   const cards = [
     { id: 'flagged', stat: <span className="card-number" style={{ color: SECTION_META.flagged.color }}>{flaggedCount}</span> },
@@ -96,48 +104,52 @@ function ClasswideReportBody({ sections, totalSubmissions }) {
 
   return (
     <div className="report-body report-body-classwide">
-      <button
-        type="button"
-        className="overview-box"
-        style={{ '--section-color': SECTION_META.overview.color }}
-        onClick={() => setOpenModal('overview')}
-      >
-        <div className="section-banner">
-          <Icon name={SECTION_META.overview.icon} className="section-banner-icon" />
-          <h3 className="section-banner-title">Class Summary</h3>
-        </div>
-        <div className="overview-body">
-          <div className="overview-text">
-            {overviewBody.split('\n').filter(Boolean).map((line, i) => (
-              <p key={i} dangerouslySetInnerHTML={{ __html: formatLine(line) }} />
-            ))}
+      <div className="classwide-top-grid">
+        <button
+          type="button"
+          className="overview-box"
+          style={{ '--section-color': SECTION_META.overview.color }}
+          onClick={() => setOpenModal('overview')}
+        >
+          <div className="section-banner">
+            <h3 className="section-banner-title">Class Summary</h3>
           </div>
-          <Icon name="chevron_right" className="section-card-chevron" />
-        </div>
-      </button>
+          <div className="overview-body">
+            <span className="confusion-badge" style={{ '--badge-color': confusionTier.color }}>
+              {confusionTier.label}
+            </span>
+            <div className="overview-text">
+              {overviewBody.split('\n').filter(Boolean).map((line, i) => (
+                <p key={i} dangerouslySetInnerHTML={{ __html: formatLine(line) }} />
+              ))}
+            </div>
+            <Icon name="chevron_right" className="section-card-chevron" />
+          </div>
+        </button>
 
-      <div className="report-card-row">
-        {cards.map(card => {
-          const meta = SECTION_META[card.id]
-          return (
-            <button
-              key={card.id}
-              type="button"
-              className="report-card"
-              style={{ '--section-color': meta.color }}
-              onClick={() => setOpenModal(card.id)}
-            >
-              <div className="section-banner">
-                <Icon name={meta.icon} className="section-banner-icon" />
-                <h4 className="section-banner-title">{meta.label}</h4>
-              </div>
-              <div className={`report-card-body${card.id === 'flagged' ? ' report-card-body--stat' : ''}`}>
-                <div className="report-card-stat">{card.stat}</div>
-                <Icon name="chevron_right" className="section-card-chevron" />
-              </div>
-            </button>
-          )
-        })}
+        <div className="report-card-row">
+          {cards.map(card => {
+            const meta = SECTION_META[card.id]
+            return (
+              <button
+                key={card.id}
+                type="button"
+                className="report-card"
+                style={{ '--section-color': meta.color }}
+                onClick={() => setOpenModal(card.id)}
+              >
+                <div className="section-banner">
+                  <Icon name={meta.icon} className="section-banner-icon" />
+                  <h4 className="section-banner-title">{meta.label}</h4>
+                </div>
+                <div className={`report-card-body${card.id === 'flagged' ? ' report-card-body--stat' : ''}`}>
+                  <div className="report-card-stat">{card.stat}</div>
+                  <Icon name="chevron_right" className="section-card-chevron" />
+                </div>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {openModal === 'overview' && (
@@ -145,20 +157,6 @@ function ClasswideReportBody({ sections, totalSubmissions }) {
           {overviewDetailsBody.split('\n').filter(Boolean).map((line, i) => (
             <p key={i} className="modal-paragraph" dangerouslySetInnerHTML={{ __html: formatLine(line) }} />
           ))}
-          <div className="overview-stats">
-            <div className="overview-stat">
-              <span className="overview-stat-number">{total}</span>
-              <span className="overview-stat-label">Submissions reviewed</span>
-            </div>
-            <div className="overview-stat">
-              <span className="overview-stat-number" style={{ color: SECTION_META.flagged.color }}>{flaggedPct}%</span>
-              <span className="overview-stat-label">Flagged ({flaggedCount})</span>
-            </div>
-            <div className="overview-stat">
-              <span className="overview-stat-number" style={{ color: SECTION_META.themes.color }}>{solidPct}%</span>
-              <span className="overview-stat-label">Solid understanding ({solidCount})</span>
-            </div>
-          </div>
         </SectionModal>
       )}
 
@@ -238,13 +236,18 @@ function GroupedChips({ groups, color, emptyText }) {
 
 // Next Steps as a numbered list with a colored number badge per item, instead
 // of plain stacked paragraphs — reads more like an actionable checklist
-function NumberedSteps({ steps, color }) {
+// arrowIcon swaps the numbered badge for an arrow — used for the student
+// report's Next Step, which is always exactly one item, so numbering it "1"
+// falsely implies there's a sequence rather than a single action to take
+function NumberedSteps({ steps, color, arrowIcon }) {
   if (steps.length === 0) return <p className="modal-empty-note">No next steps provided.</p>
   return (
     <ol className="steps-list">
       {steps.map((step, i) => (
         <li key={i} className="steps-item">
-          <span className="steps-number" style={{ background: color }}>{i + 1}</span>
+          <span className="steps-number" style={{ background: color }}>
+            {arrowIcon ? <Icon name="arrow_forward" className="steps-number-icon" /> : i + 1}
+          </span>
           <span className="steps-text" dangerouslySetInnerHTML={{ __html: formatLine(step) }} />
         </li>
       ))}
@@ -252,23 +255,39 @@ function NumberedSteps({ steps, color }) {
   )
 }
 
-// Curated view of one student's individual report — used in the Flagged tab's
+// Curated view of one student's report — used in the Student tab's
 // popup instead of dumping every section as generic stacked paragraphs. Skips
 // the raw submission answer entirely (a Google Doc submission could be long)
 // in favor of the AI's own Submission Summary, and keeps Misconceptions/Next
 // Steps concise rather than repeating information across sections.
-export function IndividualReportSummary({ content }) {
+export function StudentReportSummary({
+  content,
+  submissionContent,
+  studentName,
+  editingNextStep,
+  nextStepDraft,
+  onNextStepDraftChange,
+  onSendToStudent,
+  onCancelEdit,
+  sendingToStudent,
+}) {
   const sections = splitSections(content)
   const summaryBody = findBody(sections, 'Submission Summary')
-  const gotRightBody = findBody(sections, 'What They Got Right')
-  const misconceptionsBody = findBody(sections, 'Misconceptions Detected')
+  const understandsBody = findBody(sections, 'Understands')
+  const misconceptionsBody = findBody(sections, 'Misconceptions')
   const qualityBody = findBody(sections, 'Submission Quality')
-  const gradeBody = findBody(sections, 'Grade')
-  const nextStepsBody = findBody(sections, 'Recommended Next Steps')
+  const nextStepsBody = findBody(sections, 'Next Step')
 
-  const gotRight = parseBullets(gotRightBody)
+  const understands = parseBullets(understandsBody)
   const misconceptions = parseBullets(misconceptionsBody)
-  const nextSteps = parseBullets(nextStepsBody)
+  // The AI is instructed to write exactly one bullet here — if it wrote a
+  // plain sentence instead (no leading "- "), fall back to treating the
+  // whole trimmed body as that one step, rather than showing "no next steps"
+  // when a step was actually given, just not in the expected bullet format
+  const parsedNextSteps = parseBullets(nextStepsBody)
+  const nextSteps = parsedNextSteps.length > 0
+    ? parsedNextSteps
+    : (nextStepsBody && nextStepsBody.trim() ? [nextStepsBody.trim()] : [])
 
   // "Submission quality is acceptable" is the normal case — only worth a
   // callout when there's an actual issue (blank, too short, off-topic, etc.)
@@ -276,44 +295,53 @@ export function IndividualReportSummary({ content }) {
     ? stripBold(qualityBody.trim())
     : null
 
+  // Collapsed by default — a Google Doc submission can be a full essay, so
+  // showing it inline unconditionally could make the modal unreadably long
+  const [showSubmission, setShowSubmission] = useState(false)
+
   return (
-    <div className="individual-summary">
+    <div className="student-summary">
       {summaryBody && (
-        <div className="individual-summary-box">
-          <h4 className="individual-summary-box-title">Submission Summary</h4>
-          <p className="individual-summary-text">{stripBold(summaryBody.trim())}</p>
+        <div className="student-summary-box">
+          <h4 className="student-summary-box-title">Submission Summary</h4>
+          <p className="student-summary-text">{stripBold(summaryBody.trim())}</p>
+          {qualityIssue && (
+            <p className="student-quality-flag">
+              <Icon name="error" className="student-quality-icon" />
+              {qualityIssue}
+            </p>
+          )}
         </div>
       )}
 
-      {qualityIssue && (
-        <p className="individual-quality-flag">
-          <Icon name="error" className="individual-quality-icon" />
-          {qualityIssue}
-        </p>
-      )}
-
-      {gradeBody && (
-        <div className="individual-grade-box">
-          {gradeBody.split('\n').filter(Boolean).map((line, i) => (
-            <p key={i} dangerouslySetInnerHTML={{ __html: formatLine(line) }} />
-          ))}
+      {submissionContent && (
+        <div className="student-submission-toggle">
+          <button
+            type="button"
+            className="student-submission-toggle-btn"
+            onClick={() => setShowSubmission((v) => !v)}
+          >
+            <Icon name={showSubmission ? 'expand_less' : 'expand_more'} />
+            See submission
+          </button>
+          {showSubmission && <p className="student-submission-text">{submissionContent}</p>}
         </div>
       )}
 
-      <div className="individual-summary-columns">
-        <div className="individual-summary-box" style={{ '--box-color': SECTION_META.themes.color }}>
-          <h4 className="individual-summary-box-title" style={{ color: SECTION_META.themes.color }}>
-            <Icon name="check_circle" style={{ color: SECTION_META.themes.color }} /> What they got right
+      <div className="student-summary-columns">
+        <div className="student-summary-box" style={{ '--box-color': SECTION_META.themes.color }}>
+          <h4 className="student-summary-box-title" style={{ color: SECTION_META.themes.color }}>
+            <Icon name="check_circle" style={{ color: SECTION_META.themes.color }} /> Understands
           </h4>
           <IconBulletList
-            items={gotRight}
+            items={understands}
             icon="check"
             color={SECTION_META.themes.color}
-            emptyText="No correct understanding demonstrated."
+            emptyText="No understanding shown."
           />
         </div>
-        <div className="individual-summary-box" style={{ '--box-color': SECTION_META.misconceptions.color }}>
-          <h4 className="individual-summary-box-title" style={{ color: SECTION_META.misconceptions.color }}>
+        <div className="student-summary-box" style={{ '--box-color': SECTION_META.misconceptions.color }}>
+          <h4 className="student-summary-box-title" style={{ color: SECTION_META.misconceptions.color }}>
             <Icon name="psychology_alt" style={{ color: SECTION_META.misconceptions.color }} /> Misconceptions
           </h4>
           <IconBulletList
@@ -325,11 +353,45 @@ export function IndividualReportSummary({ content }) {
         </div>
       </div>
 
-      <div className="individual-summary-box" style={{ '--box-color': SECTION_META['next-steps'].color }}>
-        <h4 className="individual-summary-box-title" style={{ color: SECTION_META['next-steps'].color }}>
-          <Icon name="checklist" style={{ color: SECTION_META['next-steps'].color }} /> Recommended next steps
+      <div className="student-summary-box" style={{ '--box-color': SECTION_META['next-steps'].color }}>
+        <h4 className="student-summary-box-title" style={{ color: SECTION_META['next-steps'].color }}>
+          <Icon name="checklist" style={{ color: SECTION_META['next-steps'].color }} /> Next Step
         </h4>
-        <NumberedSteps steps={nextSteps} color={SECTION_META['next-steps'].color} />
+        {editingNextStep ? (
+          <div className="next-step-edit">
+            <p className="next-step-edit-hint">
+              Shown to {studentName} as written below. Edit the wording before sending
+              to address them directly.
+            </p>
+            <textarea
+              className="next-step-edit-textarea"
+              aria-label="Next Step wording for this student"
+              value={nextStepDraft}
+              onChange={(e) => onNextStepDraftChange(e.target.value)}
+              rows={3}
+            />
+            <div className="next-step-edit-actions">
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={onSendToStudent}
+                disabled={sendingToStudent || !nextStepDraft.trim()}
+              >
+                {sendingToStudent ? 'Sending…' : 'Send to Student'}
+              </button>
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={onCancelEdit}
+                disabled={sendingToStudent}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <NumberedSteps steps={nextSteps} color={SECTION_META['next-steps'].color} arrowIcon />
+        )}
       </div>
     </div>
   )

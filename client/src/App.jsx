@@ -30,6 +30,10 @@ function App() {
   const [selectedCourse, setSelectedCourse] = useState(null) // { course_id, course_name }
   const [selectedAssignment, setSelectedAssignment] = useState(null) // GC assignment object
   const [selectedSyncedRecord, setSelectedSyncedRecord] = useState(null)
+  // Which tab Assignment Detail should open on — 'context' when arriving via
+  // Courses (nothing to report on yet is the common case), 'report' when
+  // arriving via the Reports screen (the whole point of that click is the report)
+  const [detailInitialTab, setDetailInitialTab] = useState('context')
 
   // On first load, check if the teacher already has an active session
   useEffect(() => {
@@ -124,6 +128,7 @@ function App() {
   function handleSelectAssignment(assignment, syncedRecord) {
     setSelectedAssignment({ ...assignment, course_name: selectedCourse.course_name })
     setSelectedSyncedRecord(syncedRecord)
+    setDetailInitialTab('context')
     setScreen('detail')
   }
 
@@ -162,6 +167,7 @@ function App() {
     setSelectedCourse({ course_id: gcAssignment.course_id, course_name: gcAssignment.course_name })
     setSelectedAssignment({ ...gcAssignment, course_name: gcAssignment.course_name })
     setSelectedSyncedRecord(syncedRecord)
+    setDetailInitialTab('report')
     setScreen('detail')
   }
 
@@ -203,6 +209,7 @@ function App() {
       <AssignmentDetailPage
         assignment={selectedAssignment}
         syncedRecord={selectedSyncedRecord}
+        initialTab={detailInitialTab}
         onBack={handleBackToAssignments}
         onDataChange={refreshSynced}
       />

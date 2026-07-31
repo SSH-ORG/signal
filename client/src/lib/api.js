@@ -97,6 +97,17 @@ export async function getGCDescription(googleCourseworkId, courseId) {
   return data.description
 }
 
+// Fetches a course's live roster from Google Classroom — a pure read, nothing
+// is saved. Used by the Students tab so non-submitters can be listed too,
+// not just students who already have a synced submission.
+export async function getCourseRoster(courseId) {
+  const response = await fetch(`${API_BASE_URL}/api/google/courses/${courseId}/roster`, {
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error('Failed to fetch roster from Google Classroom')
+  return response.json()
+}
+
 // Returns all assignments the teacher has already synced into Signal
 export async function getSyncedCoursework() {
   const response = await fetch(`${API_BASE_URL}/api/coursework/`, {
@@ -106,7 +117,7 @@ export async function getSyncedCoursework() {
   return response.json()
 }
 
-// Returns all assignments that have a generated report, across all courses
+// Returns all assignments that have a built report, across all courses
 export async function getAllReports() {
   const response = await fetch(`${API_BASE_URL}/api/reports`, {
     credentials: 'include',
@@ -115,7 +126,7 @@ export async function getAllReports() {
   return response.json()
 }
 
-// Returns the existing AI report for an assignment (404 if not generated yet)
+// Returns the existing AI report for an assignment (404 if not built yet)
 export async function getReport(courseworkId) {
   const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report`, {
     credentials: 'include',
@@ -125,21 +136,21 @@ export async function getReport(courseworkId) {
   return response.json()
 }
 
-// Triggers the AI to generate a confusion report for an assignment
+// Triggers the AI to build a confusion report for an assignment
 // Sends all stored submissions to the AI and saves the response
-export async function generateReport(courseworkId) {
+export async function buildReport(courseworkId) {
   const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report`, {
     method: 'POST',
     credentials: 'include',
   })
   if (!response.ok) {
     const err = await response.json()
-    throw new Error(err.detail || 'Failed to generate report')
+    throw new Error(err.detail || 'Failed to build report')
   }
   return response.json()
 }
 
-// Returns all submissions for an assignment, including any individual AI reports already generated
+// Returns all submissions for an assignment, including any student reports already built
 export async function getSubmissions(courseworkId) {
   const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions`, {
     credentials: 'include',
@@ -148,20 +159,20 @@ export async function getSubmissions(courseworkId) {
   return response.json()
 }
 
-// Generates an individual AI report for one specific student's submission
-export async function generateIndividualReport(courseworkId, submissionId) {
+// Builds an AI report for one specific student's submission
+export async function buildStudentReport(courseworkId, submissionId) {
   const response = await fetch(
     `${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions/${submissionId}`,
     { method: 'POST', credentials: 'include' }
   )
   if (!response.ok) {
     const err = await response.json()
-    throw new Error(err.detail || 'Failed to generate individual report')
+    throw new Error(err.detail || 'Failed to build student report')
   }
   return response.json()
 }
 
-// Deletes the generated report for an assignment so the teacher can regenerate
+// Deletes the report for an assignment so the teacher can rebuild it
 export async function deleteReport(courseworkId) {
   const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report`, {
     method: 'DELETE',
@@ -183,6 +194,43 @@ export async function emailReport(courseworkId) {
   if (!response.ok) {
     const err = await response.json()
     throw new Error(err.detail || 'Failed to email report')
+  }
+  return response.json()
+}
+
+// Emails one student's report to the teacher's own address —
+// they can forward it on to the student themselves afterward if they want to
+export async function emailStudentReport(courseworkId, submissionId) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions/${submissionId}/email`,
+    { method: 'POST', credentials: 'include' }
+  )
+  if (!response.ok) {
+    const err = await response.json()
+    throw new Error(err.detail || 'Failed to email report')
+  }
+  return response.json()
+}
+
+// Sends one student's report directly to the student's own email, instead of
+// to the teacher — the "student agency" path, so the student gets feedback
+// without the teacher having to manually forward it themselves.
+// nextStepOverride is optional — lets a teacher tailor that one section's
+// wording (e.g. "you should..." instead of "the student should...") for just
+// this email, without changing the report as stored.
+export async function sendReportToStudent(courseworkId, submissionId, nextStepOverride) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions/${submissionId}/send-to-student`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ next_step_override: nextStepOverride || null }),
+    }
+  )
+  if (!response.ok) {
+    const err = await response.json()
+    throw new Error(err.detail || 'Failed to send report to student')
   }
   return response.json()
 }

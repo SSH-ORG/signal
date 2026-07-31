@@ -94,3 +94,16 @@ async def sync_course(
     db: Session = Depends(get_db),
 ):
     return await google_controller.sync_course_coursework(course_id, body.course_name, user, db)
+
+
+# GET /api/google/courses/{course_id}/roster
+# Live, on-demand read of a course's roster — used by the Students tab so
+# non-submitters can be listed (and get a clear "hasn't turned this in" message)
+# without persisting roster data anywhere. Nothing is saved to our database.
+@router.get("/courses/{course_id}/roster")
+async def get_course_roster(
+    course_id: str,
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    return await google_controller.fetch_course_roster(course_id, user, db)

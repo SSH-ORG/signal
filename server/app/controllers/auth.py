@@ -24,6 +24,7 @@ oauth.register(
             "https://www.googleapis.com/auth/classroom.coursework.me.readonly "
             "https://www.googleapis.com/auth/classroom.student-submissions.students.readonly "
             "https://www.googleapis.com/auth/classroom.rosters.readonly "  # Needed to fetch student names
+            "https://www.googleapis.com/auth/classroom.profile.emails "  # Needed for student email addresses (student agency work)
             "https://www.googleapis.com/auth/documents.readonly"  # Needed to read Google Doc submission content
         ),
         "access_type": "offline",  # Gives us a refresh token so we don't lose access when the access token expires

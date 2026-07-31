@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.coursework import Coursework
 from app.models.submission import Submission
 from app.models.report import Report
+from app.controllers.google import fetch_course_roster
 
 RESEND_API_URL = "https://api.resend.com/emails"
 
@@ -18,7 +19,7 @@ RESEND_API_URL = "https://api.resend.com/emails"
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 
-def generate_report(coursework_id: int, user: User, db: Session) -> dict:
+def build_report(coursework_id: int, user: User, db: Session) -> dict:
     # Fetch the assignment and make sure it belongs to this teacher
     coursework = db.query(Coursework).filter(
         Coursework.coursework_id == coursework_id,
@@ -28,13 +29,13 @@ def generate_report(coursework_id: int, user: User, db: Session) -> dict:
     if not coursework:
         raise HTTPException(status_code=404, detail="Assignment not found")
 
-    # Can't generate a report if there are no submissions to analyze
+    # Can't build a report if there are no submissions to analyze
     if not coursework.submissions:
         raise HTTPException(status_code=400, detail="No submissions found for this assignment")
 
     # A report with nothing to compare submissions against is nearly always
     # shallow and generic — require at least a mental model, description, or
-    # rubric before generating one, instead of silently falling back to "no context"
+    # rubric before building one, instead of silently falling back to "no context"
     if not coursework.context or not coursework.context.strip():
         raise HTTPException(
             status_code=400,
@@ -51,7 +52,7 @@ def generate_report(coursework_id: int, user: User, db: Session) -> dict:
 
     prompt = f"""You are an expert educator analyzing student submissions for a virtual classroom.
 
-REPORT MODE: Generate a CLASS-WIDE report covering all submissions.
+REPORT MODE: Build a CLASS-WIDE report covering all submissions.
 
 ASSIGNMENT: {coursework.title}
 
@@ -159,7 +160,7 @@ EDGE CASE RULES — follow strictly no matter what:
     )
     report_content = response.choices[0].message.content
 
-    # Regenerating — replace the existing report's content instead of blocking,
+    # Rebuilding — replace the existing report's content instead of blocking,
     # since new submissions or an edited prompt/context are exactly why a
     # teacher would want to redo it. Otherwise, this is the first report.
     if coursework.report:
@@ -184,28 +185,31 @@ EDGE CASE RULES — follow strictly no matter what:
     }
 
 
-def _is_flagged(individual_report: str) -> bool:
+def _is_flagged(student_report: str) -> bool:
     # Supports both the old prompt format and the new one so existing reports aren't re-flagged incorrectly.
     # Old format used explicit labels; new format uses section content to signal issues.
 
     # Old prompt format signals
-    if any(term in individual_report for term in [
+    if any(term in student_report for term in [
         "Misconception present", "Partial understanding", "No engagement"
     ]):
         return True
     # New prompt format — submission quality issues
-    if any(term in individual_report for term in [
+    if any(term in student_report for term in [
         "Submission was blank", "Submission too short", "Submission did not address"
     ]):
         return True
-    # New prompt format — misconceptions section exists and is not cleared
-    if "Misconceptions Detected" in individual_report and "No misconceptions detected" not in individual_report:
+    # New prompt format — misconceptions section exists and is not cleared. "Misconceptions"
+    # alone (not "Misconceptions Detected") matches both the current heading and the older
+    # one, since it's a substring of both — reports built before the section was
+    # renamed still flag correctly.
+    if "Misconceptions" in student_report and "No misconceptions detected" not in student_report:
         return True
     return False
 
 
 def get_all_reports(user: User, db: Session) -> list:
-    # Returns all assignments that have a generated report for this teacher
+    # Returns all assignments that have a built report for this teacher
     # Used by the global Reports page in the sidebar
     coursework_list = db.query(Coursework).filter(
         Coursework.user_id == user.user_id
@@ -220,10 +224,10 @@ def get_all_reports(user: User, db: Session) -> list:
             "course_name": cw.course_name or "",  # Stored at import time so it's available even for archived courses
             "report_id": cw.report.report_id,
             "created_at": cw.report.created_at,
-            # Count of students whose individual report shows less than full understanding
+            # Count of students whose report shows less than full understanding
             "flagged_count": sum(
                 1 for s in cw.submissions
-                if s.individual_report and _is_flagged(s.individual_report)
+                if s.student_report and _is_flagged(s.student_report)
             ),
             "total_submissions": len(cw.submissions),
         }
@@ -233,7 +237,7 @@ def get_all_reports(user: User, db: Session) -> list:
 
 
 def get_report(coursework_id: int, user: User, db: Session) -> dict:
-    # Returns the existing report for an assignment if one has been generated
+    # Returns the existing report for an assignment if one has been built
     coursework = db.query(Coursework).filter(
         Coursework.coursework_id == coursework_id,
         Coursework.user_id == user.user_id,
@@ -243,7 +247,7 @@ def get_report(coursework_id: int, user: User, db: Session) -> dict:
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     if not coursework.report:
-        raise HTTPException(status_code=404, detail="No report generated yet for this assignment")
+        raise HTTPException(status_code=404, detail="No report built yet for this assignment")
 
     return {
         "report_id": coursework.report.report_id,
@@ -254,7 +258,7 @@ def get_report(coursework_id: int, user: User, db: Session) -> dict:
 
 
 def delete_report(coursework_id: int, user: User, db: Session) -> dict:
-    # Deletes the report for an assignment so the teacher can regenerate a fresh one
+    # Deletes the report for an assignment so the teacher can rebuild a fresh one
     coursework = db.query(Coursework).filter(
         Coursework.coursework_id == coursework_id,
         Coursework.user_id == user.user_id,
@@ -283,7 +287,7 @@ async def email_report(coursework_id: int, user: User, db: Session) -> dict:
         raise HTTPException(status_code=404, detail="Assignment not found")
 
     if not coursework.report:
-        raise HTTPException(status_code=400, detail="No report generated yet for this assignment")
+        raise HTTPException(status_code=400, detail="No report built yet for this assignment")
 
     if not user.email:
         raise HTTPException(status_code=400, detail="No email address on file for your account")
@@ -317,7 +321,170 @@ async def email_report(coursework_id: int, user: User, db: Session) -> dict:
     return {"sent": True, "to": user.email}
 
 
-def _report_to_html(title: str, content: str) -> str:
+async def email_student_report(coursework_id: int, submission_id: int, user: User, db: Session) -> dict:
+    # Emails one student's report to the teacher's own address — a teacher can
+    # then forward it on to the student themselves if they want to, since
+    # Classroom's API has no way to post a comment directly (checked earlier)
+    coursework = db.query(Coursework).filter(
+        Coursework.coursework_id == coursework_id,
+        Coursework.user_id == user.user_id,
+    ).first()
+
+    if not coursework:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    submission = db.query(Submission).filter(
+        Submission.submission_id == submission_id,
+        Submission.coursework_id == coursework_id,
+    ).first()
+
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    if not submission.student_report:
+        raise HTTPException(status_code=400, detail="No report built yet for this student")
+
+    if not user.email:
+        raise HTTPException(status_code=400, detail="No email address on file for your account")
+
+    api_key = os.getenv("RESEND_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Email is not configured on this server")
+
+    student_label = submission.student_name or f"Student {submission.submission_id}"
+    html_body = _report_to_html(f"{coursework.title} — {student_label}", submission.student_report)
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            RESEND_API_URL,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "from": "Signal <signal@marcylab.us>",
+                "to": [user.email],
+                "subject": f"Signal Report: {coursework.title} — {student_label}",
+                "html": html_body,
+            },
+            timeout=15.0,
+        )
+
+    if resp.status_code not in (200, 201):
+        try:
+            detail = resp.json().get("message", "Failed to send email")
+        except Exception:
+            detail = "Failed to send email"
+        raise HTTPException(status_code=502, detail=detail)
+
+    return {"sent": True, "to": user.email}
+
+
+def _override_section_body(content: str, heading_substring: str, new_body: str) -> str:
+    # Swaps one section's body text (matched the same way findBody matches on
+    # the frontend — a substring of the heading) for a teacher-edited version,
+    # without touching anything else in the report. Used so a teacher tailoring
+    # the Next Step wording before sending it to a student never rewrites what's
+    # actually stored — only what goes out in that one email.
+    raw_sections = re.split(r'(?=##\s)', content.strip())
+    for i, raw in enumerate(raw_sections):
+        lines = raw.strip().split('\n')
+        heading = re.sub(r'^#+\s*', '', lines[0]).strip()
+        if heading_substring in heading:
+            # Next Step is always the last section the AI writes, so there's no
+            # following section to preserve spacing before — this only replaces
+            # the heading line and everything after it in this one chunk
+            raw_sections[i] = f"{lines[0]}\n{new_body.strip()}"
+            return "\n\n".join(s.strip() for s in raw_sections)
+    return content
+
+
+async def send_student_report(
+    coursework_id: int,
+    submission_id: int,
+    user: User,
+    db: Session,
+    next_step_override: str | None = None,
+) -> dict:
+    # Sends one student's report directly to the student's own email — a
+    # deliberate, separate action from emailing the teacher a copy, since this
+    # is the "student agency" path: the student gets their own feedback without
+    # the teacher acting as a manual go-between. Requires classroom.profile.emails,
+    # which only takes effect after a teacher re-logs-in to grant the new scope —
+    # a stale token from before it was added just returns no email, not a wrong one.
+    coursework = db.query(Coursework).filter(
+        Coursework.coursework_id == coursework_id,
+        Coursework.user_id == user.user_id,
+    ).first()
+
+    if not coursework:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    submission = db.query(Submission).filter(
+        Submission.submission_id == submission_id,
+        Submission.coursework_id == coursework_id,
+    ).first()
+
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    if not submission.student_report:
+        raise HTTPException(status_code=400, detail="No report built yet for this student")
+
+    if not submission.google_user_id or not coursework.google_course_id:
+        raise HTTPException(status_code=400, detail="Can't identify this student in Google Classroom")
+
+    roster = await fetch_course_roster(coursework.google_course_id, user, db)
+    entry = next((r for r in roster if r["google_user_id"] == submission.google_user_id), None)
+    student_email = entry["email"] if entry else None
+
+    if not student_email:
+        raise HTTPException(
+            status_code=400,
+            detail="No email on file for this student.",
+        )
+
+    api_key = os.getenv("RESEND_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Email is not configured on this server")
+
+    student_label = submission.student_name or f"Student {submission.submission_id}"
+    teacher_label = user.display_name or "your teacher"
+
+    # Only affects this one outgoing email — submission.student_report (the
+    # stored report) is never reassigned or committed here
+    report_content = submission.student_report
+    if next_step_override is not None and next_step_override.strip():
+        report_content = _override_section_body(report_content, "Next Step", next_step_override)
+
+    html_body = _report_to_html(
+        f"Feedback on {coursework.title}",
+        report_content,
+        footer_note=f"Sent from Signal on behalf of {teacher_label}.",
+    )
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            RESEND_API_URL,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "from": "Signal <signal@marcylab.us>",
+                "to": [student_email],
+                "subject": f"Feedback on {coursework.title} from {teacher_label}",
+                "html": html_body,
+            },
+            timeout=15.0,
+        )
+
+    if resp.status_code not in (200, 201):
+        try:
+            detail = resp.json().get("message", "Failed to send email")
+        except Exception:
+            detail = "Failed to send email"
+        raise HTTPException(status_code=502, detail=detail)
+
+    print(f"[email] Report for '{student_label}' sent directly to {student_email}")
+    return {"sent": True, "to": student_email}
+
+
+def _report_to_html(title: str, content: str, footer_note: str | None = None) -> str:
     # Converts the AI report markdown into a styled HTML email body
     raw_sections = re.split(r'(?=##\s)', content.strip())
 
@@ -364,15 +531,15 @@ def _report_to_html(title: str, content: str) -> str:
     </div>
     {sections_html}
     <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e8e8e8;font-size:12px;color:#aaa;">
-      Sent from Signal. Open the app to regenerate or share this report.
+      {footer_note or "Sent from Signal. Open the app to rebuild or share this report."}
     </div>
   </div>
 </body></html>"""
 
 
 def get_submissions_list(coursework_id: int, user: User, db: Session) -> list:
-    # Returns all submissions for an assignment, including any individual AI reports
-    # Used to populate the Individual tab on the Assignment Detail page
+    # Returns all submissions for an assignment, including any AI reports already built
+    # Used to populate the Student tab on the Assignment Detail page
     coursework = db.query(Coursework).filter(
         Coursework.coursework_id == coursework_id,
         Coursework.user_id == user.user_id,
@@ -385,15 +552,16 @@ def get_submissions_list(coursework_id: int, user: User, db: Session) -> list:
         {
             "submission_id": s.submission_id,
             "student_name": s.student_name,
+            "google_user_id": s.google_user_id,
             "content": s.content,
-            "individual_report": s.individual_report,
+            "student_report": s.student_report,
         }
         for s in coursework.submissions
     ]
 
 
-def generate_individual_report(coursework_id: int, submission_id: int, user: User, db: Session) -> dict:
-    # Generates an AI report focused on a single student's submission
+def build_student_report(coursework_id: int, submission_id: int, user: User, db: Session) -> dict:
+    # Builds an AI report focused on a single student's submission
     # Evaluates what they got right/wrong and gives a specific recommendation for that student
     coursework = db.query(Coursework).filter(
         Coursework.coursework_id == coursework_id,
@@ -420,27 +588,15 @@ def generate_individual_report(coursework_id: int, submission_id: int, user: Use
         )
 
     student_label = submission.student_name or f"Student {submission.submission_id}"
-    has_rubric = bool(coursework.context and "Rubric:" in coursework.context)
     context_str = coursework.context
 
-    # Grade section only appears when a rubric was actually provided
-    grade_section = """## 📝 Grade
-**Grade:** [Score based on rubric]
-**Justification:** [2–3 sentences explaining the grade based on rubric criteria]
-
----
-
-""" if has_rubric else ""
-
-    rubric_rule = (
-        "- Rubric exists: include the Grade section"
-        if has_rubric
-        else "- No rubric provided: skip the Grade section entirely — do not mention grading at all"
-    )
-
     prompt = f"""You are an expert educator analyzing a single student's submission for a teacher.
+This report is diagnostic, not evaluative — the goal is understanding why a student is
+struggling (or isn't) so the teacher knows what to do next, not assigning a grade. Never
+grade the submission or reference a score, even if a rubric is present in the context below —
+a rubric here is only for judging what strong understanding looks like, not for scoring.
 
-REPORT MODE: Generate an INDIVIDUAL report for {student_label} only.
+REPORT MODE: Build a STUDENT report for {student_label} only.
 
 ASSIGNMENT: {coursework.title}
 
@@ -453,7 +609,7 @@ Submission: {submission.content}
 
 ---
 
-INDIVIDUAL REPORT FORMAT — follow exactly:
+STUDENT REPORT FORMAT — follow exactly:
 
 ## 👤 Student: {student_label}
 
@@ -462,14 +618,14 @@ One paragraph summarizing what the student submitted and whether they addressed 
 
 ---
 
-## ✅ What They Got Right
+## ✅ Understands
 - [Specific thing done well]
 
-If nothing correct, write: No correct understanding demonstrated.
+If nothing correct, write: No understanding shown.
 
 ---
 
-## ❌ Misconceptions Detected
+## ❌ Misconceptions
 - **[Misconception]:** [one sentence on what they got wrong and what the correct understanding is]
 
 If none, write: No misconceptions detected.
@@ -487,10 +643,12 @@ If no issues, write: Submission quality is acceptable.
 
 ---
 
-{grade_section}## 💡 Recommended Next Steps
-2–3 specific things the teacher should do to support this specific student.
+## 💡 Next Step
+Write exactly ONE bullet point — the single most important thing the teacher should do to
+support this specific student. Not several, not a paragraph: one bullet, starting with "- ",
+same as the format below. This keeps a teacher building reports for multiple students from
+being overloaded with a long list for each one.
 
-- [Specific action tailored to this student]
 - [Specific action tailored to this student]
 
 ---
@@ -501,15 +659,19 @@ EDGE CASE RULES — follow strictly:
 - Off-topic or gibberish → flag as insufficient
 - NO REPETITION RULE: whenever Submission Quality flags an issue (too short, off-topic, gibberish,
   not original), state the reason there ONCE and do not restate or re-explain it in Submission
-  Summary, What They Got Right, or Misconceptions Detected — those sections should stay brief and
+  Summary, Understands, or Misconceptions — those sections should stay brief and
   factual (e.g. "Too little content to summarize" / "Not enough content to evaluate") rather than
   repeating why, in different words, in multiple places
 - More generally, each section must add information the others haven't already covered — never
   make the same point twice across sections just to fill space
+- CONSISTENCY RULE: Submission Summary and Understands must agree with each other — if Submission
+  Summary states the student used a term/concept correctly, Understands must reflect that
+  positively (not "No understanding shown", which is only for when nothing was
+  actually done correctly). Re-read both sections before finalizing to make sure they don't
+  contradict each other.
 - Never make up content or invent what the student wrote
 - Never give generic feedback — tie everything to what was actually in the submission
-{rubric_rule}
-- Never grade without a rubric
+- Never grade or score the submission, with or without a rubric — this report is diagnostic only
 - Do not use long paragraphs anywhere — keep everything scannable and concise"""
 
     response = client.chat.completions.create(
@@ -518,10 +680,10 @@ EDGE CASE RULES — follow strictly:
         temperature=0.3,
     )
 
-    submission.individual_report = response.choices[0].message.content
+    submission.student_report = response.choices[0].message.content
     db.commit()
 
     return {
         "submission_id": submission.submission_id,
-        "individual_report": submission.individual_report,
+        "student_report": submission.student_report,
     }

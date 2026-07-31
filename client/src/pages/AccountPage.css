@@ -67,7 +67,7 @@
 }
 
 /* ── Notification master toggle ───────────────────────── */
-.account-notif-toggle-row {
+.account-notif-header-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -111,66 +111,40 @@
   cursor: default;
 }
 
-/* ── Notification preference selector ────────────────── */
-.account-notif-options {
+/* ── Notification cadence toggle group ────────────────── */
+.account-notif-toggle-group {
   display: flex;
-  flex-direction: column;
-  align-items: center;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
-.account-notif-option {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  width: 320px;
-  max-width: 100%;
-  padding: 12px 14px;
-  font: inherit;
-  text-align: center;
-  background: var(--surface);
+.account-notif-toggle-btn {
+  padding: 8px 20px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 
-.account-notif-option:has(input:hover:not(:disabled)) {
-  border-color: var(--accent-border);
-}
-
-.account-notif-option--active {
-  background: var(--accent-bg);
+.account-notif-toggle-btn:hover:not(:disabled) {
   border-color: var(--accent);
-}
-
-.account-notif-option:has(input:disabled) {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.account-notif-radio {
-  cursor: pointer;
-}
-
-.account-notif-label {
-  display: block;
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--text-h);
-}
-
-.account-notif-option--active .account-notif-label {
   color: var(--accent);
 }
 
-.account-notif-hint {
-  font-size: 0.78rem;
-  color: var(--text);
-  opacity: 0.7;
-  line-height: 1.4;
+.account-notif-toggle-btn--active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.account-notif-toggle-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 /* ── Delete account ───────────────────────────────────── */
