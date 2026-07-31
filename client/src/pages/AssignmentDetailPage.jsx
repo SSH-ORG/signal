@@ -735,12 +735,6 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
                   aria-label="Search students"
                 />
 
-                {!report && (
-                  <p className="report-status">
-                    No classwide report yet — you can still search for and build a report for any student below.
-                  </p>
-                )}
-
                 {/* Distinguished from "no students flagged" — this means the report DID
                     flag students, but none of those names matched anyone in this list
                     (e.g. a roster mismatch), which is a data problem, not a clean report. */}
