@@ -150,7 +150,8 @@
    that's closer to what a teacher actually needs from a glance */
 .confusion-badge {
   align-self: flex-start;
-  font-size: 0.72rem;
+  margin: 20px 0 0 20px;
+  font-size: 0.76rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -158,7 +159,7 @@
   background: color-mix(in srgb, var(--badge-color) 12%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--badge-color) 35%, transparent);
   border-radius: 100px;
-  padding: 4px 10px;
+  padding: 5px 12px;
 }
 
 /* ── Section cards (Flagged Students / Common Misconception / Solid Themes / Next Steps) ── */

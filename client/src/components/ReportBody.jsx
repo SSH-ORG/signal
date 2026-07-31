@@ -114,10 +114,10 @@ function ClasswideReportBody({ sections }) {
           <div className="section-banner">
             <h3 className="section-banner-title">Class Summary</h3>
           </div>
+          <span className="confusion-badge" style={{ '--badge-color': confusionTier.color }}>
+            {confusionTier.label}
+          </span>
           <div className="overview-body">
-            <span className="confusion-badge" style={{ '--badge-color': confusionTier.color }}>
-              {confusionTier.label}
-            </span>
             <div className="overview-text">
               {overviewBody.split('\n').filter(Boolean).map((line, i) => (
                 <p key={i} dangerouslySetInnerHTML={{ __html: formatLine(line) }} />

@@ -296,7 +296,9 @@ async def email_report(coursework_id: int, user: User, db: Session) -> dict:
     if not api_key:
         raise HTTPException(status_code=500, detail="Email is not configured on this server")
 
-    html_body = _report_to_html(coursework.title, coursework.report.content)
+    course_name = (coursework.course_name or "").strip()
+    subject = f"Classwide Report: {course_name} – {coursework.title}" if course_name else f"Classwide Report: {coursework.title}"
+    html_body = _classwide_email_html(coursework.title, coursework.report.content, subtitle=course_name or None)
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -305,7 +307,7 @@ async def email_report(coursework_id: int, user: User, db: Session) -> dict:
             json={
                 "from": "Signal <signal@marcylab.us>",
                 "to": [user.email],
-                "subject": f"Signal Report: {coursework.title}",
+                "subject": subject,
                 "html": html_body,
             },
             timeout=15.0,
@@ -352,7 +354,14 @@ async def email_student_report(coursework_id: int, submission_id: int, user: Use
         raise HTTPException(status_code=500, detail="Email is not configured on this server")
 
     student_label = submission.student_name or f"Student {submission.submission_id}"
-    html_body = _report_to_html(f"{coursework.title} — {student_label}", submission.student_report)
+    course_name = (coursework.course_name or "").strip()
+    subject = (
+        f"{student_label} Report: {course_name} – {coursework.title}"
+        if course_name else f"{student_label} Report: {coursework.title}"
+    )
+    html_body = _student_email_html(
+        f"{student_label} — {coursework.title}", submission.student_report, subtitle=course_name or None
+    )
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -361,7 +370,7 @@ async def email_student_report(coursework_id: int, submission_id: int, user: Use
             json={
                 "from": "Signal <signal@marcylab.us>",
                 "to": [user.email],
-                "subject": f"Signal Report: {coursework.title} — {student_label}",
+                "subject": subject,
                 "html": html_body,
             },
             timeout=15.0,
@@ -454,10 +463,10 @@ async def send_student_report(
     if next_step_override is not None and next_step_override.strip():
         report_content = _override_section_body(report_content, "Next Step", next_step_override)
 
-    html_body = _report_to_html(
+    html_body = _student_email_html(
         f"Feedback on {coursework.title}",
         report_content,
-        footer_note=f"Sent from Signal on behalf of {teacher_label}.",
+        footer_note=f"Sent from {_signal_link_html()} on behalf of {teacher_label}.",
     )
 
     async with httpx.AsyncClient() as client:
@@ -467,7 +476,7 @@ async def send_student_report(
             json={
                 "from": "Signal <signal@marcylab.us>",
                 "to": [student_email],
-                "subject": f"Feedback on {coursework.title} from {teacher_label}",
+                "subject": f"Feedback from {teacher_label} about {coursework.title}",
                 "html": html_body,
             },
             timeout=15.0,
@@ -484,57 +493,357 @@ async def send_student_report(
     return {"sent": True, "to": student_email}
 
 
-def _report_to_html(title: str, content: str, footer_note: str | None = None) -> str:
-    # Converts the AI report markdown into a styled HTML email body
-    raw_sections = re.split(r'(?=##\s)', content.strip())
 
-    sections_html = ""
-    for raw in raw_sections:
-        if not raw.strip():
+# ── Email rendering ──────────────────────────────────────────────────────
+# Mirrors the app's own report display (ReportBody.jsx) instead of dumping
+# generic markdown — same section colors/labels/badge — so a report reads
+# the same whether it's opened in Signal or in an inbox. Inter is loaded
+# from Google Fonts; Gmail renders linked webfonts, so this actually shows
+# up as Inter there instead of silently falling back to the system font.
+
+FONT_STACK = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+
+# color/border/tint per section — mirrors SECTION_META in ReportBody.jsx.
+# Tints are precomputed light hexes rather than alpha-blended at render time,
+# since 8-digit hex alpha support is inconsistent across email clients.
+# Icons are plain Unicode text glyphs (checkmark/x), not emoji — plain text
+# renders identically everywhere with no color/font-rendering variance, and
+# sections with no clean plain-text equivalent (Flagged Students, Next Steps)
+# just skip the icon rather than force one in.
+SECTION_STYLES = {
+    "overview": {"label": "Class Summary", "icon": "", "color": "#aa3bff", "border": "#e3c6ff", "tint": "#f6ecff"},
+    "flagged": {"label": "Flagged Students", "icon": "!", "color": "#d93025", "border": "#f6c6c0", "tint": "#fdecea"},
+    "misconceptions": {"label": "Common Misconceptions", "icon": "✗", "color": "#e67e22", "border": "#f6d2a6", "tint": "#fff2e2"},
+    "themes": {"label": "Solid Themes", "icon": "✓", "color": "#27ae60", "border": "#a9e0c1", "tint": "#e7f7ee"},
+    "next-steps": {"label": "Next Steps", "icon": "&rarr;", "color": "#3b82f6", "border": "#b9d3fb", "tint": "#eaf1ff"},
+    "summary": {"label": "Submission Summary", "icon": "", "color": "#6b7280", "border": "#d8dade", "tint": "#f3f4f6"},
+    "understands": {"label": "Understands", "icon": "✓", "color": "#27ae60", "border": "#a9e0c1", "tint": "#e7f7ee"},
+    "student-misconceptions": {"label": "Misconceptions", "icon": "✗", "color": "#e67e22", "border": "#f6d2a6", "tint": "#fff2e2"},
+    "next-step": {"label": "Next Step", "icon": "", "color": "#3b82f6", "border": "#b9d3fb", "tint": "#eaf1ff"},
+}
+
+
+def _split_sections(content: str) -> list:
+    # Same convention as splitSections in reportParsing.js
+    sections = []
+    for raw in re.split(r'(?=##\s)', content.strip()):
+        lines = [l for l in raw.strip().split('\n') if l.strip()]
+        if not lines:
             continue
-        lines = raw.strip().split('\n')
         heading = re.sub(r'^#+\s*', '', lines[0]).strip()
-        body_lines = [l for l in lines[1:] if l.strip()]
+        sections.append({"heading": heading, "body": "\n".join(lines[1:])})
+    return sections
 
+
+def _find_body(sections: list, heading: str) -> str:
+    for s in sections:
+        if heading in s["heading"]:
+            return s["body"]
+    return ""
+
+
+def _parse_bullets(body: str) -> list:
+    return [
+        re.sub(r'^[-*]\s', '', line.strip())
+        for line in body.split('\n')
+        if re.match(r'^[-*]\s', line.strip())
+    ]
+
+
+def _parse_groups(body: str, label_word: str) -> list:
+    label_re = re.compile(rf'^\*\*{label_word}:\*\*\s*', re.IGNORECASE)
+    groups = []
+    current = None
+    for raw_line in body.split('\n'):
+        line = raw_line.strip()
+        if not line:
+            continue
+        if label_re.match(line):
+            if current:
+                groups.append(current)
+            current = {"label": label_re.sub('', line), "students": []}
+        elif re.match(r'^[-*]\s', line) and current:
+            current["students"].append(re.sub(r'^[-*]\s', '', line))
+    if current:
+        groups.append(current)
+    return groups
+
+
+def _strip_bold(text: str) -> str:
+    return re.sub(r'\*\*(.+?)\*\*', r'\1', text or '')
+
+
+def _format_line(line: str) -> str:
+    line = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', line)
+    line = re.sub(r'^\*+\s', '', line)
+    line = re.sub(r'^-+\s', '', line)
+    return line
+
+
+def _badge_html(label: str, color: str, tint: str) -> str:
+    return (
+        f'<span style="display:inline-block;margin-bottom:10px;font-family:{FONT_STACK};font-size:12px;'
+        f'font-weight:700;text-transform:uppercase;letter-spacing:0.03em;color:{color};background:{tint};'
+        f'border:1px solid {color};border-radius:100px;padding:5px 12px;">{label}</span><br>'
+    )
+
+
+def _section_box(key: str, body_html: str) -> str:
+    meta = SECTION_STYLES[key]
+    icon_html = f'<span style="margin-right:8px;">{meta["icon"]}</span>' if meta["icon"] else ""
+    return f"""
+<div style="margin-bottom:16px;border:1px solid {meta['border']};border-radius:10px;overflow:hidden;">
+  <div style="background:{meta['color']};padding:10px 16px;">
+    <span style="color:#fff;font-family:{FONT_STACK};font-weight:700;font-size:14px;">{icon_html}{meta['label']}</span>
+  </div>
+  <div style="padding:16px;background:#ffffff;">{body_html}</div>
+</div>"""
+
+
+def _chips_html(items: list, color: str, tint: str, empty_text: str) -> str:
+    if not items:
+        return f'<p style="margin:0;font-family:{FONT_STACK};font-size:13px;color:#888;">{empty_text}</p>'
+    return "".join(
+        f'<span style="display:inline-block;margin:0 6px 6px 0;padding:4px 10px;border-radius:100px;'
+        f'background:{tint};border:1px solid {color};font-family:{FONT_STACK};font-size:13px;'
+        f'color:#111;">{_format_line(i)}</span>'
+        for i in items
+    )
+
+
+def _grouped_chips_html(groups: list, color: str, tint: str, empty_text: str) -> str:
+    if not groups:
+        return f'<p style="margin:0;font-family:{FONT_STACK};font-size:13px;color:#888;">{empty_text}</p>'
+    return "".join(
+        f'<div style="margin-bottom:12px;"><p style="margin:0 0 6px;font-family:{FONT_STACK};font-size:13px;'
+        f'font-weight:700;color:#111;">{_format_line(g["label"])}</p>{_chips_html(g["students"], color, tint, "")}</div>'
+        for g in groups
+    )
+
+
+def _numbered_steps_html(steps: list, color: str) -> str:
+    if not steps:
+        return f'<p style="margin:0;font-family:{FONT_STACK};font-size:13px;color:#888;">No next steps provided.</p>'
+    rows = ""
+    for step in steps:
+        # margin-right on the icon, not flex gap — gap on a flex container is
+        # unreliable across email clients and can silently collapse to 0
+        marker_html = (
+            f'<span style="flex-shrink:0;margin-right:8px;font-size:16px;'
+            f'font-weight:700;color:{color};">&rarr;</span>'
+        )
+        rows += (
+            f'<div style="display:flex;margin-bottom:8px;">{marker_html}'
+            f'<span style="font-family:{FONT_STACK};font-size:14px;line-height:1.6;color:#111;'
+            f'padding-top:1px;">{_format_line(step)}</span>'
+            f'</div>'
+        )
+    return rows
+
+
+def _icon_bullet_list_html(items: list, color: str, icon_char: str, empty_text: str) -> str:
+    if not items:
+        return f'<p style="margin:0;font-family:{FONT_STACK};font-size:13px;color:#888;">{empty_text}</p>'
+    return "".join(
+        f'<div style="display:flex;margin-bottom:6px;">'
+        f'<span style="color:{color};font-weight:700;flex-shrink:0;margin-right:8px;">{icon_char}</span>'
+        f'<span style="font-family:{FONT_STACK};font-size:13px;line-height:1.5;'
+        f'color:#111;">{_format_line(i)}</span></div>'
+        for i in items
+    )
+
+
+def _paragraphs_html(body: str) -> str:
+    return "".join(
+        f'<p style="margin:0 0 8px;font-family:{FONT_STACK};font-size:14px;line-height:1.6;'
+        f'color:#111;">{_format_line(line)}</p>'
+        for line in body.split('\n') if line.strip()
+    )
+
+
+def _generic_sections_html(sections: list) -> str:
+    # Fallback when content doesn't match the expected headings — plain
+    # heading + paragraph/bullet render, same as the old generic template
+    html = ""
+    for s in sections:
         body_html = ""
         in_list = False
-        for line in body_lines:
-            is_bullet = re.match(r'^[\-\*]\s', line)
-            if is_bullet:
+        for line in s["body"].split('\n'):
+            if not line.strip():
+                continue
+            if re.match(r'^[-*]\s', line):
                 if not in_list:
                     body_html += '<ul style="margin:0 0 8px;padding-left:20px;">'
                     in_list = True
-                text = re.sub(r'^[\-\*]\s', '', line)
-                text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
-                body_html += f'<li style="margin-bottom:4px;font-size:14px;line-height:1.6;">{text}</li>'
+                body_html += (
+                    f'<li style="margin-bottom:4px;font-family:{FONT_STACK};font-size:14px;'
+                    f'line-height:1.6;">{_format_line(line)}</li>'
+                )
             else:
                 if in_list:
                     body_html += '</ul>'
                     in_list = False
-                text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', line)
-                body_html += f'<p style="margin:0 0 8px;font-size:14px;line-height:1.6;">{text}</p>'
+                body_html += (
+                    f'<p style="margin:0 0 8px;font-family:{FONT_STACK};font-size:14px;'
+                    f'line-height:1.6;">{_format_line(line)}</p>'
+                )
         if in_list:
             body_html += '</ul>'
+        html += (
+            f'<div style="margin-bottom:28px;"><h2 style="font-family:{FONT_STACK};font-size:15px;font-weight:700;'
+            f'margin:0 0 10px;padding-bottom:8px;border-bottom:1px solid #f0f0f0;">{s["heading"]}</h2>{body_html}</div>'
+        )
+    return html
 
-        sections_html += f"""
-<div style="margin-bottom:28px;">
-  <h2 style="font-size:15px;font-weight:700;margin:0 0 10px;padding-bottom:8px;border-bottom:1px solid #f0f0f0;">{heading}</h2>
-  {body_html}
-</div>"""
 
+def _classwide_report_body_html(content: str) -> str:
+    # Mirrors ClasswideReportBody — Class Summary (with confusion badge) then
+    # Flagged Students / Common Misconceptions / Solid Themes / Next Steps,
+    # each shown in full rather than as a click-to-expand card like the app,
+    # since email has no interactivity to expand anything.
+    sections = _split_sections(content)
+    overview_details = _find_body(sections, 'Overview Details') or _find_body(sections, 'Class Overview')
+    flagged_body = _find_body(sections, 'Flagged Students')
+    misconceptions_body = _find_body(sections, 'Common Misconceptions')
+    themes_body = _find_body(sections, 'Solid Themes')
+    next_steps_body = _find_body(sections, 'Next Steps')
+
+    if not any([overview_details, flagged_body, misconceptions_body, themes_body, next_steps_body]):
+        return _generic_sections_html(sections)
+
+    flagged_names = _parse_bullets(flagged_body)
+    misconception_groups = _parse_groups(misconceptions_body, 'Misconception')
+    theme_groups = _parse_groups(themes_body, 'Theme')
+    next_steps = _parse_bullets(next_steps_body)
+
+    flagged_count = len(flagged_names)
+    solid_count = len({s for g in theme_groups for s in g["students"]})
+
+    if flagged_count == 0:
+        tier_label, tier_color, tier_tint = "Strong Understanding", "#27ae60", "#e7f7ee"
+    elif flagged_count > solid_count:
+        tier_label, tier_color, tier_tint = "Needs Attention", "#d93025", "#fdecea"
+    else:
+        tier_label, tier_color, tier_tint = "Mixed Understanding", "#e67e22", "#fff2e2"
+
+    summary_html = _badge_html(tier_label, tier_color, tier_tint) + _paragraphs_html(overview_details)
+
+    html = _section_box("overview", summary_html)
+    html += _section_box("flagged", _chips_html(
+        flagged_names, SECTION_STYLES["flagged"]["color"], SECTION_STYLES["flagged"]["tint"], "No students flagged."
+    ))
+    html += _section_box("misconceptions", _grouped_chips_html(
+        misconception_groups, SECTION_STYLES["misconceptions"]["color"], SECTION_STYLES["misconceptions"]["tint"],
+        "No common misconceptions detected.",
+    ))
+    html += _section_box("themes", _grouped_chips_html(
+        theme_groups, SECTION_STYLES["themes"]["color"], SECTION_STYLES["themes"]["tint"], "No solid themes detected."
+    ))
+    html += _section_box("next-steps", _numbered_steps_html(next_steps, SECTION_STYLES["next-steps"]["color"]))
+    return html
+
+
+def _student_report_body_html(content: str) -> str:
+    # Mirrors StudentReportSummary — Submission Summary (with the quality
+    # flag folded in, same as the modal) then Understands/Misconceptions
+    # side by side, then Next Step with an arrow marker instead of a number
+    sections = _split_sections(content)
+    summary_body = _find_body(sections, 'Submission Summary')
+    understands_body = _find_body(sections, 'Understands')
+    misconceptions_body = _find_body(sections, 'Misconceptions')
+    quality_body = _find_body(sections, 'Submission Quality')
+    next_step_body = _find_body(sections, 'Next Step')
+
+    if not any([summary_body, understands_body, misconceptions_body, next_step_body]):
+        return _generic_sections_html(sections)
+
+    understands = _parse_bullets(understands_body)
+    misconceptions = _parse_bullets(misconceptions_body)
+    parsed_next_steps = _parse_bullets(next_step_body)
+    next_steps = parsed_next_steps if parsed_next_steps else (
+        [next_step_body.strip()] if next_step_body.strip() else []
+    )
+
+    quality_issue = None
+    if quality_body and "acceptable" not in quality_body.lower():
+        # The prompt's own instructions show bullet-formatted examples for
+        # this section, and the model sometimes echoes that "- " into its
+        # actual one-line answer — strip it the same way _format_line does
+        quality_issue = re.sub(r'^[-*]\s+', '', _strip_bold(quality_body.strip()))
+
+    summary_html = (
+        f'<p style="margin:0;font-family:{FONT_STACK};font-size:14px;line-height:1.6;'
+        f'color:#111;">{_format_line(summary_body.strip())}</p>'
+        if summary_body else ""
+    )
+    if quality_issue:
+        summary_html += (
+            f'<div style="display:flex;margin-top:10px;">'
+            f'<span style="color:#b45309;font-weight:700;flex-shrink:0;margin-right:8px;">!</span>'
+            f'<span style="font-family:{FONT_STACK};font-size:13px;color:#b45309;">{quality_issue}</span>'
+            f'</div>'
+        )
+
+    html = _section_box("summary", summary_html) if summary_body else ""
+
+    understands_html = _icon_bullet_list_html(
+        understands, SECTION_STYLES["understands"]["color"], "✓", "No understanding shown."
+    )
+    misconceptions_html = _icon_bullet_list_html(
+        misconceptions, SECTION_STYLES["student-misconceptions"]["color"], "✗", "No misconceptions detected."
+    )
+    html += f"""
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  <tr>
+    <td width="50%" style="vertical-align:top;padding-right:8px;">{_section_box("understands", understands_html)}</td>
+    <td width="50%" style="vertical-align:top;padding-left:8px;">{_section_box("student-misconceptions", misconceptions_html)}</td>
+  </tr>
+</table>"""
+
+    html += _section_box("next-step", _numbered_steps_html(next_steps, SECTION_STYLES["next-step"]["color"]))
+    return html
+
+
+def _signal_link_html() -> str:
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    return f'<a href="{frontend_url}" style="color:#111;text-decoration:underline;font-weight:600;">Signal</a>'
+
+
+def _email_shell(title: str, body_html: str, footer_note: str | None = None, subtitle: str | None = None) -> str:
+    subtitle_html = (
+        f'<p style="font-family:{FONT_STACK};font-size:13px;font-style:italic;color:#666;margin:4px 0 0;">{subtitle}</p>'
+        if subtitle else ""
+    )
     return f"""<!DOCTYPE html>
-<html><body style="margin:0;padding:0;background:#f9f9f9;">
-  <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:640px;margin:32px auto;padding:32px 28px;background:#fff;border-radius:8px;border:1px solid #e8e8e8;">
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:{FONT_STACK};">
+  <div style="max-width:640px;margin:32px auto;padding:32px 28px;background:#ffffff;border-radius:12px;border:1px solid #e5e5e8;font-family:{FONT_STACK};">
     <div style="margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #111;">
-      <p style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#888;margin:0 0 8px;">Signal · AI Report</p>
-      <h1 style="font-size:20px;font-weight:700;margin:0;">{title}</h1>
+      <h1 style="font-family:{FONT_STACK};font-size:20px;font-weight:700;margin:0;color:#111;">{title}</h1>
+      {subtitle_html}
     </div>
-    {sections_html}
-    <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e8e8e8;font-size:12px;color:#aaa;">
-      {footer_note or "Sent from Signal. Open the app to rebuild or share this report."}
+    {body_html}
+    <div style="margin-top:8px;padding-top:16px;border-top:1px solid #e8e8e8;font-family:{FONT_STACK};font-size:12px;color:#aaa;">
+      {footer_note or f"Sent from {_signal_link_html()}."}
     </div>
   </div>
-</body></html>"""
+</body>
+</html>"""
+
+
+def _classwide_email_html(title: str, content: str, footer_note: str | None = None, subtitle: str | None = None) -> str:
+    return _email_shell(title, _classwide_report_body_html(content), footer_note, subtitle)
+
+
+def _student_email_html(title: str, content: str, footer_note: str | None = None, subtitle: str | None = None) -> str:
+    return _email_shell(title, _student_report_body_html(content), footer_note, subtitle)
 
 
 def get_submissions_list(coursework_id: int, user: User, db: Session) -> list:
