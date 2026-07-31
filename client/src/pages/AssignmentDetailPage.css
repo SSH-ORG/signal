@@ -564,14 +564,6 @@
   border-top: 1px solid var(--border);
 }
 
-/* Top bar: Build All button + flagged summary count */
-.student-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
 /* Small pill next to a name, distinguishing an AI-flagged student from one a
    teacher searched for/built manually — same rounded-pill language as the
    report's own name-chips, just scoped to this row */

@@ -93,8 +93,6 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
   // right where the teacher was looking when they clicked
   const [studentActionError, setStudentActionError] = useState(null)
   const [buildingStudentId, setBuildingStudentId] = useState(null) // submission_id currently building
-  const [buildingAll, setBuildingAll] = useState(false)
-  const [buildProgress, setBuildProgress] = useState({ done: 0, total: 0 })
   // submission_id of the student whose report is open in the popup, or null
   const [openReportId, setOpenReportId] = useState(null)
   const [emailingStudent, setEmailingStudent] = useState(false)
@@ -290,6 +288,13 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
         context: prev ? prev.context : combinedContext(),
         submission_count: result.total_submissions,
       }))
+      // The Students tab's own submissions list only refetches when reportMode
+      // changes — if a teacher is already on that tab when they click Refresh,
+      // it would otherwise sit stale (new/updated submissions invisible, "Build"
+      // unavailable for anyone just synced in) until they left and came back.
+      if (reportMode === 'students') {
+        getSubmissions(result.coursework_id).then(setSubmissions).catch(() => {})
+      }
       onDataChange()
     } catch (err) {
       setActionError(err.message)
@@ -468,23 +473,6 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
     } else {
       setStudentActionError({ key: student.key, message: `Failed to build a report for ${student.name}. Try again.` })
     }
-  }
-
-  // Builds reports for every flagged, submitted student that
-  // doesn't have one yet, one at a time so Groq isn't hammered with parallel
-  // requests. Updates each card live as its report finishes. Scoped to
-  // flagged students specifically — a bulk build across every student
-  // regardless of the AI's signal would be needlessly expensive.
-  async function handleBuildAllFlagged() {
-    const toBuild = allStudents.filter((s) => s.flagged && s.hasSubmitted && !s.submission.student_report)
-    if (toBuild.length === 0) return
-    setBuildingAll(true)
-    setBuildProgress({ done: 0, total: toBuild.length })
-    for (const student of toBuild) {
-      await handleBuildSubmissionReport(student.submission.submission_id)
-      setBuildProgress((prev) => ({ ...prev, done: prev.done + 1 }))
-    }
-    setBuildingAll(false)
   }
 
   // A report with nothing to compare submissions against is nearly always
@@ -771,30 +759,6 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
                   <p className="report-status">No students match your search.</p>
                 )}
 
-                {/* Build All bar — scoped to flagged, already-submitted students only;
-                    only shown while there's something left to build, so it disappears
-                    once done instead of sitting there as a redundant disabled button */}
-                {(() => {
-                  const flaggedToBuild = allStudents.filter(
-                    (s) => s.flagged && s.hasSubmitted && !s.submission.student_report
-                  )
-                  if (!buildingAll && flaggedToBuild.length === 0) return null
-                  return (
-                    <div className="student-bar">
-                      <button
-                        type="button"
-                        className="secondary-btn"
-                        onClick={handleBuildAllFlagged}
-                        disabled={buildingAll}
-                      >
-                        {buildingAll
-                          ? `Building… ${buildProgress.done} / ${buildProgress.total}`
-                          : `Build All Flagged (${flaggedToBuild.length} remaining)`}
-                      </button>
-                    </div>
-                  )
-                })()}
-
                 <div className="student-card-grid">
                   {filteredStudents.map((student) =>
                     student.hasSubmitted && student.submission.student_report ? (
@@ -824,7 +788,6 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
                               type="button"
                               className="student-build-btn"
                               onClick={() => handleBuildStudentReport(student)}
-                              disabled={buildingAll}
                             >
                               Build
                             </button>
