@@ -11,50 +11,63 @@ RESEND_API_URL = "https://api.resend.com/emails"
 
 # ── HTML helpers ─────────────────────────────────────────────────────────────
 
+# Formats a due date the same way ReportsPage formats report build dates
+# ("Jul 31, 2026") so emails read consistently with the app's own date style
+def _format_due_date(due_date) -> str:
+    return due_date.strftime("%b %-d, %Y")
+
+
 # Assignments whose due date has passed but have no class-wide report yet —
 # a nudge to go build (or, if context is still missing, add context first).
-# Shows each assignment's submission count so the teacher can judge whether
-# there's enough in yet to be worth building from.
-def _ready_to_build_html(coursework_list) -> str:
-    rows = "".join(
+# Each one renders as a card matching the app's own item-card styling
+# (AssignmentsPage/ReportsPage) — title, submission count, due date — and
+# links straight back into Signal so the nudge is one click from action.
+def _ready_to_build_html(coursework_list, frontend_url) -> str:
+    # Most recently due first; undated ones (not produced by the query today,
+    # but handled here in case that ever changes) sink to the bottom, oldest
+    # created first — same tiebreaker AssignmentsPage uses for undated items
+    dated = sorted((cw for cw in coursework_list if cw.due_date), key=lambda cw: cw.due_date, reverse=True)
+    undated = sorted((cw for cw in coursework_list if not cw.due_date), key=lambda cw: cw.coursework_id)
+    ordered = dated + undated
+
+    cards = "".join(
         f"""
-<tr>
-  <td style="padding:10px 0;border-bottom:1px solid #f4f4f4;">
-    <strong style="font-size:14px;color:#111;">{cw.title}</strong>
-    <p style="margin:2px 0 0;font-size:12px;color:#888;">
-      {cw.course_name or 'Class'} &middot; {len(cw.submissions)} submission{'s' if len(cw.submissions) != 1 else ''}
-      {f' of {cw.student_count}' if cw.student_count else ''}
-    </p>
-  </td>
-</tr>"""
-        for cw in coursework_list
+<a href="{frontend_url}" style="display:block;margin-bottom:8px;background:#fff;
+                                 border:1px solid #cbc9d1;border-radius:8px;text-decoration:none;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td style="padding:14px 16px;vertical-align:middle;">
+        <div style="font-size:15px;font-weight:600;color:#08060d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+          {cw.title}
+        </div>
+        <div style="font-size:12px;color:#6b6375;margin-top:3px;">
+          {cw.course_name or 'Class'}
+          &middot; {len(cw.submissions)}{f' of {cw.student_count}' if cw.student_count else ''} submission{'s' if len(cw.submissions) != 1 else ''}
+          &middot; {f'due {_format_due_date(cw.due_date)}' if cw.due_date else 'no due date'}
+        </div>
+      </td>
+      <td width="28" style="padding:14px 16px 14px 0;vertical-align:middle;text-align:right;white-space:nowrap;">
+        <span style="font-size:18px;color:#6b6375;">&rsaquo;</span>
+      </td>
+    </tr>
+  </table>
+</a>"""
+        for cw in ordered
     )
-    count = len(coursework_list)
     return f"""
 <div style="border:1px solid #e8e8e8;border-radius:10px;overflow:hidden;">
   <div style="background:#f8f9fa;padding:14px 18px;border-bottom:1px solid #e8e8e8;">
     <p style="margin:0;font-size:13px;font-weight:700;color:#111;">
-      Ready to build — {count} assignment{'s' if count != 1 else ''}
+      READY TO BUILD
     </p>
   </div>
-  <div style="padding:4px 18px;">
-    <table width="100%" cellpadding="0" cellspacing="0">{rows}</table>
+  <div style="padding:14px 18px;">
+    {cards}
   </div>
 </div>"""
 
 
-def _full_email_html(
-    notif_title: str,
-    date_str: str,
-    ready_to_build_count: int,
-    ready_to_build_html: str,
-    frontend_url: str,
-) -> str:
-    meta_line = (
-        f"{date_str} &nbsp;&middot;&nbsp; "
-        f"{ready_to_build_count} assignment{'s' if ready_to_build_count != 1 else ''} ready to build"
-    )
-
+def _full_email_html(ready_to_build_html: str, frontend_url: str) -> str:
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
@@ -62,17 +75,8 @@ def _full_email_html(
              font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
   <div style="max-width:640px;margin:32px auto;padding:0 16px 32px;">
 
-    <!-- Header -->
-    <div style="background:#111;border-radius:10px 10px 0 0;padding:24px 28px;">
-      <p style="font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;
-                color:#666;margin:0 0 8px;">Signal</p>
-      <h1 style="font-size:20px;font-weight:700;color:#fff;margin:0 0 6px;">{notif_title}</h1>
-      <p style="font-size:13px;color:#aaa;margin:0;">{meta_line}</p>
-    </div>
-
     <!-- Ready to build -->
-    <div style="background:#fff;border:1px solid #e8e8e8;border-top:none;
-                border-radius:0 0 10px 10px;padding:24px 28px;">
+    <div style="background:#fff;border:1px solid #e8e8e8;border-radius:10px;padding:24px 28px;">
       {ready_to_build_html}
     </div>
 
@@ -122,15 +126,10 @@ async def send_notifs(user: User, db: Session, window_hours: int) -> bool:
         print(f"[email] Nothing ready to build for user_id={user.user_id} — skipping")
         return False
 
-    today = now.strftime("%-d %B %Y")
-    notif_title = "Daily Signal Reminder" if window_hours <= 24 else "Weekly Signal Reminder"
-    subject = f"Ready to build — {today}"
+    subject = "REMINDER: BUILD REPORT"
 
     html = _full_email_html(
-        notif_title=notif_title,
-        date_str=today,
-        ready_to_build_count=len(ready_to_build),
-        ready_to_build_html=_ready_to_build_html(ready_to_build),
+        ready_to_build_html=_ready_to_build_html(ready_to_build, frontend_url),
         frontend_url=frontend_url,
     )
 

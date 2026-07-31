@@ -592,7 +592,7 @@ async def sync_coursework(
                 coursework_id=coursework.coursework_id,
                 google_submission_id=sub["id"],
                 google_user_id=user_id,
-                student_name=roster.get(user_id),  # None if roster fetch failed or student not found
+                student_name=roster.get(user_id, {}).get("name"),  # None if roster fetch failed or student not found
             )
             db.add(submission)
             new_count += 1

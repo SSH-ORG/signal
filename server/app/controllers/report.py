@@ -456,6 +456,7 @@ async def send_student_report(
 
     student_label = submission.student_name or f"Student {submission.submission_id}"
     teacher_label = user.display_name or "your teacher"
+    course_name = (coursework.course_name or "").strip()
 
     # Only affects this one outgoing email — submission.student_report (the
     # stored report) is never reassigned or committed here
@@ -464,9 +465,10 @@ async def send_student_report(
         report_content = _override_section_body(report_content, "Next Step", next_step_override)
 
     html_body = _student_email_html(
-        f"Feedback on {coursework.title}",
+        coursework.title,
         report_content,
         footer_note=f"Sent from {_signal_link_html()} on behalf of {teacher_label}.",
+        subtitle=course_name or None,
     )
 
     async with httpx.AsyncClient() as client:
@@ -476,7 +478,7 @@ async def send_student_report(
             json={
                 "from": "Signal <signal@marcylab.us>",
                 "to": [student_email],
-                "subject": f"Feedback from {teacher_label} about {coursework.title}",
+                "subject": f"Feedback from {teacher_label}",
                 "html": html_body,
             },
             timeout=15.0,

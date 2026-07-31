@@ -105,7 +105,7 @@ function HelpPage() {
 
         <div className="help-tip">
           <p>
-            <strong>Tip:</strong> Signal only pulls in assignments and short-answer questions from
+            <strong>Tip:</strong> Signal only syncs assignments and short-answer questions from
             Google Classroom — multiple-choice questions aren't supported. For assignments, only
             Google Doc attachments are read; Slides, Sheets, PDFs, and links aren't.
           </p>
