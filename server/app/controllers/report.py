@@ -221,7 +221,7 @@ def get_all_reports(user: User, db: Session) -> list:
             "title": cw.title,
             "google_coursework_id": cw.google_coursework_id,
             "google_course_id": cw.google_course_id,  # Lets the frontend match this class's custom color from the Courses screen
-            "course_name": cw.course_name or "",  # Stored at import time so it's available even for archived courses
+            "course_name": cw.course_name or "",  # Stored at sync time so it's available even for archived courses
             "report_id": cw.report.report_id,
             "created_at": cw.report.created_at,
             # Count of students whose report shows less than full understanding

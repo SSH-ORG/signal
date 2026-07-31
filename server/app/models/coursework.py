@@ -3,7 +3,7 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
-# Represents the 'coursework' table — one row per assignment a teacher creates or imports
+# Represents the 'coursework' table — one row per assignment a teacher creates or syncs
 class Coursework(Base):
     __tablename__ = "coursework"
 

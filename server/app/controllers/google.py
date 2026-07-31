@@ -427,7 +427,7 @@ async def fetch_google_coursework(user: User, db: Session) -> dict:
                 due_date = _parse_due_date(cw)
                 all_coursework.append({
                     "google_coursework_id": cw["id"],
-                    "course_id": course["id"],              # Needed by the import endpoint
+                    "course_id": course["id"],              # Needed by the sync endpoint
                     "title": cw.get("title", "Untitled"),
                     "description": cw.get("description", ""),  # Pre-fills the teacher's context field
                     "course_name": course.get("name", ""),  # Which class this assignment belongs to
@@ -447,8 +447,8 @@ async def fetch_google_coursework(user: User, db: Session) -> dict:
         ]
 
     # Reconcile stored course_name against live Classroom data on every load — covers
-    # rows whose course_name was never saved correctly (e.g. a past import bug) or
-    # whose class was renamed since import. Only touches rows still in the live list,
+    # rows whose course_name was never saved correctly (e.g. a past sync bug) or
+    # whose class was renamed since it was synced. Only touches rows still in the live list,
     # so classes that are actually archived keep their last-known name instead of
     # being overwritten.
     live_names = {cw["google_coursework_id"]: cw["course_name"] for cw in all_coursework}

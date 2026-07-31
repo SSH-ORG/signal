@@ -98,7 +98,7 @@ function AuthPage({ onLoginSuccess }) {
 
       <Reveal className="landing-demo">
         <h2>See it in action</h2>
-        <p>A quick look at importing an assignment and generating a confusion report.</p>
+        <p>A quick look at syncing an assignment and building a confusion report.</p>
         <div className="demo-frame">
           {videoAvailable ? (
             <video className="demo-video" controls src="/demo.mp4" />
