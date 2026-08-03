@@ -100,6 +100,10 @@
   line-height: 1.5;
 }
 
+.detail-section-hint--warning {
+  color: #b45309;
+}
+
 /* ── Context textarea ────────────────────────────────── */
 .context-textarea {
   width: 100%;
@@ -574,6 +578,21 @@
   color: var(--error, #d93025);
   background: color-mix(in srgb, var(--error, #d93025) 12%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--error, #d93025) 35%, transparent);
+  border-radius: 100px;
+  padding: 2px 8px;
+  width: fit-content;
+}
+
+/* Turned in per Google, but nothing readable came out of it — distinct from
+   both Flagged (a real, analyzable submission the AI had something to say
+   about) and a non-submitter (no row at all) */
+.student-empty-badge {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--text) 35%, transparent);
   border-radius: 100px;
   padding: 2px 8px;
   width: fit-content;

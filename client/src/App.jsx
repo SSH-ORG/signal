@@ -7,7 +7,7 @@ import AccountPage from './pages/AccountPage'
 import HelpPage from './pages/HelpPage'
 import ReportsPage from './pages/ReportsPage'
 import AppShell from './components/AppShell'
-import { getCurrentUser, getGoogleCoursework, getSyncedCoursework } from './lib/api'
+import { getCurrentUser, getGoogleCourses, getSyncedCoursework, setSessionExpiredHandler } from './lib/api'
 
 // App is the root component — it owns the shared Classroom/synced-assignment data
 // and switches between screens: Classes -> Coursework -> Assignment Detail, plus
@@ -15,15 +15,14 @@ import { getCurrentUser, getGoogleCoursework, getSyncedCoursework } from './lib/
 function App() {
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true) // Prevents flash of wrong page on load
+  // Shown on AuthPage after a Google session expires mid-use, so a teacher
+  // understands why they landed back on the sign-in screen
+  const [sessionMessage, setSessionMessage] = useState(null)
 
   const [gcCourses, setGcCourses] = useState([])         // Every active Google Classroom course, even ones with no assignments
-  const [gcAssignments, setGcAssignments] = useState([]) // Live from Google Classroom (flat list)
   const [synced, setSynced] = useState([])                // Stored in our database
   const [dataLoading, setDataLoading] = useState(true)
   const [dataError, setDataError] = useState(null)
-  // Names of courses whose assignments failed to sync (not just empty) — shown as a
-  // non-blocking warning since the rest of the screen still loaded successfully
-  const [failedCourses, setFailedCourses] = useState([])
 
   // 'courses' | 'assignments' | 'detail' | 'account' | 'help' | 'reports'
   const [screen, setScreen] = useState('courses')
@@ -43,9 +42,22 @@ function App() {
       .finally(() => setAuthLoading(false))
   }, [])
 
-  // Load live Classroom data and synced assignments on login and every time
-  // the teacher navigates back to the Classes screen — this way new classes or
-  // assignments added in Google Classroom appear without a full page refresh
+  // Registered once — every page's failed request routes through api.js's shared
+  // 401 check, so a Google session expiring anywhere in the app (not just here on
+  // Courses) reliably kicks back to sign-in with a clear reason instead of each
+  // page silently failing or showing an unrelated generic error
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      setUser(null)
+      setScreen('courses')
+      setSessionMessage('Your Google session expired. Please sign in again.')
+    })
+  }, [])
+
+  // Load the course list on login and every time the teacher navigates back to
+  // the Classes screen — this way new classes appear without a full page refresh.
+  // Assignment data for a class is fetched separately, only once that class is
+  // actually opened (see AssignmentsPage) — this only ever needs course names.
   useEffect(() => {
     if (!user || screen !== 'courses') return
 
@@ -54,13 +66,11 @@ function App() {
       setDataError(null) // Clear any error from a previous failed attempt before retrying
       try {
         const [gc, syncedData] = await Promise.all([
-          getGoogleCoursework(),
+          getGoogleCourses(),
           getSyncedCoursework(),
         ])
         setGcCourses(gc.courses)
-        setGcAssignments(gc.coursework)
         setSynced(syncedData)
-        setFailedCourses(gc.failed_courses || [])
       } catch (err) {
         // Logged for us — the teacher-facing message below is deliberately
         // simplified and shouldn't include raw backend/Google error text
@@ -71,8 +81,6 @@ function App() {
           // can't act on "the server," so point at what they can check instead;
           // the console.error above has the real cause for us.
           setDataError('Please check your internet and try again.')
-        } else if (err.status === 401 || err.status === 404) {
-          setDataError('Your Google session expired. Please log in again.')
         } else {
           setDataError('Failed to load courses from Google Classroom. Please try again in a moment.')
         }
@@ -92,10 +100,11 @@ function App() {
   async function handleLoginSuccess() {
     const currentUser = await getCurrentUser()
     setUser(currentUser)
+    setSessionMessage(null)
   }
 
   if (!user) {
-    return <AuthPage onLoginSuccess={handleLoginSuccess} />
+    return <AuthPage onLoginSuccess={handleLoginSuccess} message={sessionMessage} />
   }
 
   // Called after AccountPage has already logged out / deleted the account on
@@ -155,17 +164,21 @@ function App() {
     setScreen('reports')
   }
 
-  // Navigate to an assignment's detail page directly from the Reports page
-  // Looks up the full assignment object and synced record by coursework_id
+  // Navigate to an assignment's detail page directly from the Reports page.
+  // Everything needed is already sitting in the synced record — a report only
+  // ever exists for an assignment that's already been synced, so there's no
+  // need for a live Google lookup here at all.
   function handleViewAssignmentById(courseworkId) {
     const syncedRecord = synced.find((cw) => cw.coursework_id === courseworkId)
     if (!syncedRecord) return
-    const gcAssignment = gcAssignments.find(
-      (a) => a.google_coursework_id === syncedRecord.google_coursework_id
-    )
-    if (!gcAssignment) return
-    setSelectedCourse({ course_id: gcAssignment.course_id, course_name: gcAssignment.course_name })
-    setSelectedAssignment({ ...gcAssignment, course_name: gcAssignment.course_name })
+    setSelectedCourse({ course_id: syncedRecord.google_course_id, course_name: syncedRecord.course_name })
+    setSelectedAssignment({
+      google_coursework_id: syncedRecord.google_coursework_id,
+      course_id: syncedRecord.google_course_id,
+      course_name: syncedRecord.course_name,
+      title: syncedRecord.title,
+      due_date: syncedRecord.due_date,
+    })
     setSelectedSyncedRecord(syncedRecord)
     setDetailInitialTab('report')
     setScreen('detail')
@@ -196,12 +209,9 @@ function App() {
     page = (
       <AssignmentsPage
         courseId={selectedCourse.course_id}
-        courseName={selectedCourse.course_name}
-        gcAssignments={gcAssignments}
         synced={synced}
         onBack={handleBackToCourses}
         onSelectAssignment={handleSelectAssignment}
-        onDataChange={refreshSynced}
       />
     )
   } else if (screen === 'detail' && selectedAssignment) {
@@ -220,7 +230,6 @@ function App() {
         courses={gcCourses}
         loading={dataLoading}
         error={dataError}
-        failedCourses={failedCourses}
         onSelectCourse={handleSelectCourse}
       />
     )

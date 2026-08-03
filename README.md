@@ -136,6 +136,8 @@ Click Build to analyze every submission against that context and produce a class
 
 All under `/auth` and `/api`, session-cookie authenticated:
 
+**Auth**
+
 | Method | Path | Description |
 |---|---|---|
 | GET | `/auth/google` | Start Google sign-in |
@@ -144,30 +146,51 @@ All under `/auth` and `/api`, session-cookie authenticated:
 | PATCH | `/auth/profile` | Edit name/email/notification preference |
 | DELETE | `/auth/account` | Delete account and all its data/permissions |
 | POST | `/auth/logout` | Log out |
-| GET | `/api/google/coursework` | Live list of assignments |
+
+**Google Classroom sync**
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/google/courses` | Live list of active Google Classroom courses |
+| GET | `/api/google/courses/{course_id}/coursework` | Live list of one course's assignments |
 | GET | `/api/google/coursework/{id}/rubric` | Fetch a rubric from Classroom |
-| POST | `/api/google/coursework/{id}/import` | Sync an assignment's submissions |
+| GET | `/api/google/coursework/{id}/description` | Fetch an assignment's current description from Classroom |
+| POST | `/api/google/coursework/{id}/sync` | Sync an assignment and its submissions into Signal |
+
+**Coursework**
+
+| Method | Path | Description |
+|---|---|---|
 | GET | `/api/coursework` | List synced assignments |
-| GET | `/api/coursework/{id}` | Single assignment + submissions + report |
 | PATCH | `/api/coursework/{id}` | Edit an assignment's context |
-| GET | `/api/coursework/{id}/report` | Build the AI report |
-| POST | `/api/coursework/{id}/report` | Build/rebuild the AI report |
-| POST | `/api/coursework/{id}/report/email` | Email the report |
+
+**Reports**
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/coursework/{id}/report` | Get the existing class-wide AI report for an assignment |
+| POST | `/api/coursework/{id}/report` | Build/rebuild the class-wide AI report |
 | DELETE | `/api/coursework/{id}/report` | Delete the report |
+| POST | `/api/coursework/{id}/report/email` | Email the class-wide report to yourself |
+| GET | `/api/coursework/{id}/report/submissions` | List submissions + per-student reports for an assignment |
+| POST | `/api/coursework/{id}/report/submissions/{submission_id}` | Build one student's report |
+| POST | `/api/coursework/{id}/report/submissions/{submission_id}/email` | Email one student's report to yourself |
+| POST | `/api/coursework/{id}/report/submissions/{submission_id}/draft-student-email` | Draft a second-person rewrite of a student's report for review |
+| POST | `/api/coursework/{id}/report/submissions/{submission_id}/send-to-student` | Send a student's report directly to their own email |
 | GET | `/api/reports` | All reports across every class |
 
 ### Project Status
 ***
 ###
-MVP complete. User flow: sign in > sync Google Classroom > choose a class > choose a assignment > build a report.
+MVP complete. User flow: sign in > sync Google Classroom > choose a class > choose an assignment > build a report —
+class-wide or per student, with an editable direct-to-student email option and optional daily/weekly digest notifications.
 
 #### Still in progress:
-- Email feature integration
-- AI feature success
+- AI report accuracy/quality (ongoing tuning based on teacher feedback)
 
 #### Limitations
 - AI feature is still in demo mode (please share feedback: https://forms.gle/w5ZB37N6FFe9ScVp9)
-- Google has not approved our app so we are using a demo version, only approved test users (manually added) can sign in with Google. Please email Syed: *xayanmay@gmail.com* for approval.
+- We're still on the free, testing tier of the Google Classroom API — Google hasn't approved our app yet, so only manually-approved test users can sign in with Google. Please email Syed: *xayanmay@gmail.com* for approval.
 
 ### License
 ***

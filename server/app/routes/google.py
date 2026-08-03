@@ -18,24 +18,31 @@ class SyncCourseworkRequest(BaseModel):
     context: str | None = None  # Teacher-reviewed context/rubric; falls back to the Classroom description if omitted
     course_name: str = ""     # Course name stored so it's available even after a course is archived
     due_date: str | None = None      # ISO string — pass through when the frontend already has a fresh value
-    student_count: int | None = None  # Roster size — pass through when the frontend already has a fresh value
 
 
-# Request body for the course-sync endpoint
-class SyncCourseRequest(BaseModel):
-    course_name: str = ""     # Stored on each assignment so it's available even after the course is archived
-
-
-# GET /api/google/coursework
-# Returns { courses, coursework } — every active Google Classroom course (even ones
-# with no assignments yet) plus a flat list of assignments across all of them
-# Does NOT save anything to our database — just a live fetch for browsing
-@router.get("/coursework")
-async def list_google_coursework(
+# GET /api/google/courses
+# Returns { courses } — every active Google Classroom course (even ones with no
+# assignments yet). Does NOT save anything to our database — just a live fetch
+# for the Courses screen, which only ever needs course names.
+@router.get("/courses")
+async def list_google_courses(
     user: User = Depends(require_login),
     db: Session = Depends(get_db),
 ):
-    return await google_controller.fetch_google_coursework(user, db)
+    return await google_controller.fetch_google_courses(user, db)
+
+
+# GET /api/google/courses/{course_id}/coursework
+# Returns { coursework, failed } — one course's live assignment list (title, due
+# date, description). Does NOT save anything to our database — just a live fetch
+# for the Assignments screen, before any of them have been individually synced.
+@router.get("/courses/{course_id}/coursework")
+async def list_course_coursework(
+    course_id: str,
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    return await google_controller.fetch_course_coursework(course_id, user, db)
 
 
 # GET /api/google/coursework/{google_coursework_id}/rubric?course_id=...
@@ -64,7 +71,7 @@ async def sync_single_coursework(
     return await google_controller.sync_coursework(
         google_coursework_id, body.course_id, user, db,
         context=body.context, course_name=body.course_name,
-        due_date=body.due_date, student_count=body.student_count,
+        due_date=body.due_date,
     )
 
 
@@ -80,30 +87,3 @@ async def get_description(
     db: Session = Depends(get_db),
 ):
     return await google_controller.fetch_assignment_description(google_coursework_id, course_id, user, db)
-
-
-# POST /api/google/courses/{course_id}/sync
-# Syncs every published assignment in one course at once — called automatically
-# when a teacher opens or revisits that course's Coursework screen, so syncing
-# doesn't depend on a manual first click per assignment
-@router.post("/courses/{course_id}/sync")
-async def sync_course(
-    course_id: str,
-    body: SyncCourseRequest,
-    user: User = Depends(require_login),
-    db: Session = Depends(get_db),
-):
-    return await google_controller.sync_course_coursework(course_id, body.course_name, user, db)
-
-
-# GET /api/google/courses/{course_id}/roster
-# Live, on-demand read of a course's roster — used by the Students tab so
-# non-submitters can be listed (and get a clear "hasn't turned this in" message)
-# without persisting roster data anywhere. Nothing is saved to our database.
-@router.get("/courses/{course_id}/roster")
-async def get_course_roster(
-    course_id: str,
-    user: User = Depends(require_login),
-    db: Session = Depends(get_db),
-):
-    return await google_controller.fetch_course_roster(course_id, user, db)

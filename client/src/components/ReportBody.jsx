@@ -5,7 +5,7 @@ import './ReportBody.css'
 
 // Shared AI report renderer — used on AssignmentDetailPage (classwide + student)
 // and ReportsPage (inline expanded view).
-// mode="classwide" renders the Class Overview box + the 4 section cards
+// mode="classwide" renders the Class Summary box + the 4 section cards
 // (Flagged Students / Common Misconception / Solid Themes / Next Steps), each
 // color-coded and opening its full detail in a modal. Any other mode
 // (student reports) falls back to the original stacked-sections layout.
@@ -36,8 +36,8 @@ const SECTION_META = {
 }
 
 function ClasswideReportBody({ sections }) {
-  const overviewBody = findBody(sections, 'Class Overview')
-  const overviewDetailsBody = findBody(sections, 'Overview Details')
+  const overviewBody = findBody(sections, 'Class Summary')
+  const overviewDetailsBody = findBody(sections, 'Summary Details')
   const flaggedBody = findBody(sections, 'Flagged Students')
   const misconceptionsBody = findBody(sections, 'Common Misconceptions')
   const themesBody = findBody(sections, 'Solid Themes')
@@ -168,13 +168,13 @@ function ClasswideReportBody({ sections }) {
 
       {openModal === 'misconceptions' && (
         <SectionModal meta={SECTION_META.misconceptions} onClose={() => setOpenModal(null)}>
-          <GroupedChips groups={misconceptionGroups} color={SECTION_META.misconceptions.color} emptyText="No common misconceptions detected." />
+          <GroupedChips groups={misconceptionGroups} color={SECTION_META.misconceptions.color} emptyText="No common misconceptions found." />
         </SectionModal>
       )}
 
       {openModal === 'themes' && (
         <SectionModal meta={SECTION_META.themes} onClose={() => setOpenModal(null)}>
-          <GroupedChips groups={themeGroups} color={SECTION_META.themes.color} emptyText="No solid themes detected." />
+          <GroupedChips groups={themeGroups} color={SECTION_META.themes.color} emptyText="No solid themes found." />
         </SectionModal>
       )}
 
@@ -255,18 +255,37 @@ function NumberedSteps({ steps, color, arrowIcon }) {
   )
 }
 
+function DraftTextarea({ label, value, onChange, rows = 3, disabled = false }) {
+  return (
+    <textarea
+      className="next-step-edit-textarea"
+      aria-label={label}
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+      rows={rows}
+      disabled={disabled}
+    />
+  )
+}
+
 // Curated view of one student's report — used in the Student tab's
 // popup instead of dumping every section as generic stacked paragraphs. Skips
 // the raw submission answer entirely (a Google Doc submission could be long)
 // in favor of the AI's own Submission Summary, and keeps Misconceptions/Next
 // Steps concise rather than repeating information across sections.
+//
+// When editingStudentEmail is true, every section swaps its static view for a
+// textarea bound to emailDraft (a second-person AI rewrite, drafted fresh right
+// before this view opens — see draft_student_email) so a teacher can tailor any
+// section's wording before it's sent, without any of this touching the report
+// as stored.
 export function StudentReportSummary({
   content,
   submissionContent,
   studentName,
-  editingNextStep,
-  nextStepDraft,
-  onNextStepDraftChange,
+  editingStudentEmail,
+  emailDraft,
+  onEmailDraftChange,
   onSendToStudent,
   onCancelEdit,
   sendingToStudent,
@@ -299,17 +318,40 @@ export function StudentReportSummary({
   // showing it inline unconditionally could make the modal unreadably long
   const [showSubmission, setShowSubmission] = useState(false)
 
+  function updateDraft(field) {
+    return (value) => onEmailDraftChange(field, value)
+  }
+
   return (
     <div className="student-summary">
-      {summaryBody && (
+      {(summaryBody || editingStudentEmail) && (
         <div className="student-summary-box">
           <h4 className="student-summary-box-title">Submission Summary</h4>
-          <p className="student-summary-text">{stripBold(summaryBody.trim())}</p>
-          {qualityIssue && (
-            <p className="student-quality-flag">
-              <Icon name="error" className="student-quality-icon" />
-              {qualityIssue}
-            </p>
+          {editingStudentEmail ? (
+            <DraftTextarea
+              label="Submission Summary wording for this student"
+              value={emailDraft?.submissionSummary}
+              onChange={updateDraft('submissionSummary')}
+              disabled={sendingToStudent}
+            />
+          ) : (
+            <p className="student-summary-text">{stripBold(summaryBody.trim())}</p>
+          )}
+          {editingStudentEmail ? (
+            <DraftTextarea
+              label="Submission Quality wording for this student"
+              value={emailDraft?.submissionQuality}
+              onChange={updateDraft('submissionQuality')}
+              rows={2}
+              disabled={sendingToStudent}
+            />
+          ) : (
+            qualityIssue && (
+              <p className="student-quality-flag">
+                <Icon name="error" className="student-quality-icon" />
+                {qualityIssue}
+              </p>
+            )
           )}
         </div>
       )}
@@ -333,23 +375,41 @@ export function StudentReportSummary({
           <h4 className="student-summary-box-title" style={{ color: SECTION_META.themes.color }}>
             <Icon name="check_circle" style={{ color: SECTION_META.themes.color }} /> Understands
           </h4>
-          <IconBulletList
-            items={understands}
-            icon="check"
-            color={SECTION_META.themes.color}
-            emptyText="No understanding shown."
-          />
+          {editingStudentEmail ? (
+            <DraftTextarea
+              label="Understands wording for this student"
+              value={emailDraft?.understands}
+              onChange={updateDraft('understands')}
+              disabled={sendingToStudent}
+            />
+          ) : (
+            <IconBulletList
+              items={understands}
+              icon="check"
+              color={SECTION_META.themes.color}
+              emptyText="No understanding shown."
+            />
+          )}
         </div>
         <div className="student-summary-box" style={{ '--box-color': SECTION_META.misconceptions.color }}>
           <h4 className="student-summary-box-title" style={{ color: SECTION_META.misconceptions.color }}>
             <Icon name="psychology_alt" style={{ color: SECTION_META.misconceptions.color }} /> Misconceptions
           </h4>
-          <IconBulletList
-            items={misconceptions}
-            icon="close"
-            color={SECTION_META.misconceptions.color}
-            emptyText="No misconceptions detected."
-          />
+          {editingStudentEmail ? (
+            <DraftTextarea
+              label="Misconceptions wording for this student"
+              value={emailDraft?.misconceptions}
+              onChange={updateDraft('misconceptions')}
+              disabled={sendingToStudent}
+            />
+          ) : (
+            <IconBulletList
+              items={misconceptions}
+              icon="close"
+              color={SECTION_META.misconceptions.color}
+              emptyText="No misconceptions found."
+            />
+          )}
         </div>
       </div>
 
@@ -357,27 +417,26 @@ export function StudentReportSummary({
         <h4 className="student-summary-box-title" style={{ color: SECTION_META['next-steps'].color }}>
           <Icon name="checklist" style={{ color: SECTION_META['next-steps'].color }} /> Next Step
         </h4>
-        {editingNextStep ? (
+        {editingStudentEmail ? (
           <div className="next-step-edit">
             <p className="next-step-edit-hint">
-              Shown to {studentName} as written below. Edit the wording before sending
-              to address them directly.
+              This message will be sent to {studentName} exactly as written above and below —
+              edit any section before sending.
             </p>
-            <textarea
-              className="next-step-edit-textarea"
-              aria-label="Next Step wording for this student"
-              value={nextStepDraft}
-              onChange={(e) => onNextStepDraftChange(e.target.value)}
-              rows={3}
+            <DraftTextarea
+              label="Next Step wording for this student"
+              value={emailDraft?.nextStep}
+              onChange={updateDraft('nextStep')}
+              disabled={sendingToStudent}
             />
             <div className="next-step-edit-actions">
               <button
                 type="button"
                 className="primary-btn"
                 onClick={onSendToStudent}
-                disabled={sendingToStudent || !nextStepDraft.trim()}
+                disabled={sendingToStudent || !emailDraft?.nextStep?.trim()}
               >
-                {sendingToStudent ? 'Sending…' : 'Send to Student'}
+                {sendingToStudent ? 'Sending ..' : 'Send to Student'}
               </button>
               <button
                 type="button"

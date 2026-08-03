@@ -12,10 +12,14 @@ from app.controllers import report as report_controller
 router = APIRouter()
 
 
-# Optional — a teacher can tailor the Next Step wording before it goes
-# directly to a student (e.g. rephrasing from "the student should..." to
-# "you should..."). Only affects this one email; the stored report is untouched.
+# All optional — a teacher can tailor any section's wording (e.g. rephrasing
+# from "the student should..." to "you should...") before it goes directly to
+# a student. Only affects this one email; the stored report is untouched.
 class SendToStudentRequest(BaseModel):
+    submission_summary_override: str | None = None
+    understands_override: str | None = None
+    misconceptions_override: str | None = None
+    submission_quality_override: str | None = None
     next_step_override: str | None = None
 
 
@@ -98,6 +102,19 @@ async def email_student(
     return await report_controller.email_student_report(coursework_id, submission_id, user, db)
 
 
+# POST /api/coursework/{coursework_id}/report/submissions/{submission_id}/draft-student-email
+# Drafts a second-person rewrite of a student's report for the teacher to review/edit
+# before sending — generated fresh on each call, never persisted
+@router.post("/submissions/{submission_id}/draft-student-email")
+def draft_student_email(
+    coursework_id: int,
+    submission_id: int,
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    return report_controller.draft_student_email(coursework_id, submission_id, user, db)
+
+
 # POST /api/coursework/{coursework_id}/report/submissions/{submission_id}/send-to-student
 # Sends one student's report directly to the student's own email
 @router.post("/submissions/{submission_id}/send-to-student")
@@ -109,5 +126,13 @@ async def send_to_student(
     db: Session = Depends(get_db),
 ):
     return await report_controller.send_student_report(
-        coursework_id, submission_id, user, db, next_step_override=body.next_step_override
+        coursework_id,
+        submission_id,
+        user,
+        db,
+        submission_summary_override=body.submission_summary_override,
+        understands_override=body.understands_override,
+        misconceptions_override=body.misconceptions_override,
+        submission_quality_override=body.submission_quality_override,
+        next_step_override=body.next_step_override,
     )

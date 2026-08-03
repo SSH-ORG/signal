@@ -1,7 +1,8 @@
-// Per-teacher class color overrides — a display preference only, not app data,
-// so it's kept in localStorage rather than the backend. Shared between
-// CoursesPage (where a teacher sets it) and ReportsPage (where it's read), so
-// a color change on one screen is reflected on the other automatically.
+// Per-teacher class color overrides for the Courses screen only — a display
+// preference, not app data, so it's kept in localStorage rather than the
+// backend. Reports-screen cards deliberately don't read this: those are
+// Signal-generated, not the teacher's own class cards, so they're always
+// shown in the fixed brand purple instead (see ReportsPage.jsx).
 
 // Picked to stay in-family with the app's purple accent — cycled across cards
 // that don't have a stored override yet.

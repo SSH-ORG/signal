@@ -128,7 +128,7 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
 
             <div className="detail-actions">
               <button type="submit" className="primary-btn" disabled={savingProfile}>
-                {savingProfile ? 'Saving…' : 'Save changes'}
+                {savingProfile ? 'Saving ..' : 'Save changes'}
               </button>
             </div>
           </form>
@@ -220,7 +220,7 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
                   onClick={handleDeleteAccount}
                   disabled={deleting}
                 >
-                  {deleting ? 'Deleting…' : 'Yes, delete my account'}
+                  {deleting ? 'Deleting ..' : 'Yes, delete my account'}
                 </button>
                 <button
                   type="button"

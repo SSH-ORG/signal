@@ -23,17 +23,6 @@ def list_coursework(user: User = Depends(require_login), db: Session = Depends(g
     return coursework_controller.get_all_coursework(user, db)
 
 
-# GET /api/coursework/{coursework_id}
-# Returns a single assignment with all its submissions and AI report (if one exists)
-@router.get("/{coursework_id}")
-def get_coursework(
-    coursework_id: int,
-    user: User = Depends(require_login),
-    db: Session = Depends(get_db),
-):
-    return coursework_controller.get_single_coursework(coursework_id, user, db)
-
-
 # PATCH /api/coursework/{coursework_id}
 # Lets a teacher add or edit the rubric/learning-goal context used by the AI report
 @router.patch("/{coursework_id}")

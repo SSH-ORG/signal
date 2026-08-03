@@ -2,9 +2,18 @@
 // if the backend isn't running on the default local port.
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
+// Set by App.jsx once, so any page's failed request reacts the same way to an
+// expired Google session instead of each page deciding (or forgetting) on its own
+let sessionExpiredHandler = () => {}
+export function setSessionExpiredHandler(handler) {
+  sessionExpiredHandler = handler
+}
+
 // Builds an Error from a failed response, preferring the backend's actual detail
 // message over a generic fallback, and tagging the status code so callers can
-// branch on the failure reason (e.g. expired session vs a Google API failure)
+// branch on the failure reason (e.g. expired session vs a Google API failure).
+// Also fires the session-expired handler on 401 — every function below routes
+// its errors through here, so this is the one place that needs to know.
 async function readErrorDetail(response, fallback) {
   let detail
   try {
@@ -14,15 +23,29 @@ async function readErrorDetail(response, fallback) {
   }
   const error = new Error(detail || fallback)
   error.status = response.status
+  if (response.status === 401) sessionExpiredHandler()
   return error
 }
 
-// Fetches all assignments from the teacher's Google Classroom courses (live, not stored)
-export async function getGoogleCoursework() {
-  const response = await fetch(`${API_BASE_URL}/api/google/coursework`, {
+// Fetches every active Google Classroom course (even ones with no assignments
+// yet) — a live, read-only list, nothing saved. Used by the Courses screen,
+// which only ever needs course names, not assignment data.
+export async function getGoogleCourses() {
+  const response = await fetch(`${API_BASE_URL}/api/google/courses`, {
     credentials: 'include',
   })
-  if (!response.ok) throw await readErrorDetail(response, 'Failed to fetch Google Classroom courses and assignments')
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to fetch Google Classroom courses')
+  return response.json()
+}
+
+// Fetches one course's live assignment list from Google Classroom (title, due
+// date, description) — a pure read, nothing saved. Used by the Assignments
+// screen to display a class's assignments before any of them are synced.
+export async function getCourseAssignments(courseId) {
+  const response = await fetch(`${API_BASE_URL}/api/google/courses/${courseId}/coursework`, {
+    credentials: 'include',
+  })
+  if (!response.ok) throw await readErrorDetail(response, "Failed to fetch this class's assignments from Google Classroom")
   return response.json()
 }
 
@@ -36,23 +59,7 @@ export async function syncCoursework(googleCourseworkId, courseId, context, cour
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ course_id: courseId, context, course_name: courseName }),
   })
-  if (!response.ok) {
-    const err = await response.json()
-    throw new Error(err.detail || 'Failed to sync assignment')
-  }
-  return response.json()
-}
-
-// Syncs every published assignment in one course at once — called automatically
-// when a teacher opens or revisits that course's Coursework screen
-export async function syncCourse(courseId, courseName = '') {
-  const response = await fetch(`${API_BASE_URL}/api/google/courses/${courseId}/sync`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ course_name: courseName }),
-  })
-  if (!response.ok) throw await readErrorDetail(response, 'Failed to sync course')
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to sync assignment')
   return response.json()
 }
 
@@ -64,10 +71,7 @@ export async function updateCourseworkContext(courseworkId, context) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ context }),
   })
-  if (!response.ok) {
-    const err = await response.json()
-    throw new Error(err.detail || 'Failed to update context')
-  }
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to update context')
   return response.json()
 }
 
@@ -78,7 +82,7 @@ export async function getGCRubric(googleCourseworkId, courseId) {
     `${API_BASE_URL}/api/google/coursework/${googleCourseworkId}/rubric?course_id=${courseId}`,
     { credentials: 'include' }
   )
-  if (!response.ok) throw new Error('Failed to fetch rubric from Google Classroom')
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to fetch rubric from Google Classroom')
   const data = await response.json()
   return data.rubric_text  // null if no rubric exists
 }
@@ -92,20 +96,9 @@ export async function getGCDescription(googleCourseworkId, courseId) {
     `${API_BASE_URL}/api/google/coursework/${googleCourseworkId}/description?course_id=${courseId}`,
     { credentials: 'include' }
   )
-  if (!response.ok) throw new Error('Failed to fetch description from Google Classroom')
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to fetch description from Google Classroom')
   const data = await response.json()
   return data.description
-}
-
-// Fetches a course's live roster from Google Classroom — a pure read, nothing
-// is saved. Used by the Students tab so non-submitters can be listed too,
-// not just students who already have a synced submission.
-export async function getCourseRoster(courseId) {
-  const response = await fetch(`${API_BASE_URL}/api/google/courses/${courseId}/roster`, {
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error('Failed to fetch roster from Google Classroom')
-  return response.json()
 }
 
 // Returns all assignments the teacher has already synced into Signal
@@ -122,7 +115,7 @@ export async function getAllReports() {
   const response = await fetch(`${API_BASE_URL}/api/reports`, {
     credentials: 'include',
   })
-  if (!response.ok) throw new Error('Failed to fetch reports')
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to fetch reports')
   return response.json()
 }
 
@@ -132,7 +125,7 @@ export async function getReport(courseworkId) {
     credentials: 'include',
   })
   if (response.status === 404) return null
-  if (!response.ok) throw new Error('Failed to fetch report')
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to fetch report')
   return response.json()
 }
 
@@ -143,10 +136,7 @@ export async function buildReport(courseworkId) {
     method: 'POST',
     credentials: 'include',
   })
-  if (!response.ok) {
-    const err = await response.json()
-    throw new Error(err.detail || 'Failed to build report')
-  }
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to build report')
   return response.json()
 }
 
@@ -155,7 +145,7 @@ export async function getSubmissions(courseworkId) {
   const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions`, {
     credentials: 'include',
   })
-  if (!response.ok) throw new Error('Failed to fetch submissions')
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to fetch submissions')
   return response.json()
 }
 
@@ -165,10 +155,7 @@ export async function buildStudentReport(courseworkId, submissionId) {
     `${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions/${submissionId}`,
     { method: 'POST', credentials: 'include' }
   )
-  if (!response.ok) {
-    const err = await response.json()
-    throw new Error(err.detail || 'Failed to build student report')
-  }
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to build student report')
   return response.json()
 }
 
@@ -178,10 +165,7 @@ export async function deleteReport(courseworkId) {
     method: 'DELETE',
     credentials: 'include',
   })
-  if (!response.ok) {
-    const err = await response.json()
-    throw new Error(err.detail || 'Failed to delete report')
-  }
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to delete report')
   return response.json()
 }
 
@@ -191,10 +175,7 @@ export async function emailReport(courseworkId) {
     method: 'POST',
     credentials: 'include',
   })
-  if (!response.ok) {
-    const err = await response.json()
-    throw new Error(err.detail || 'Failed to email report')
-  }
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to email report')
   return response.json()
 }
 
@@ -205,33 +186,46 @@ export async function emailStudentReport(courseworkId, submissionId) {
     `${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions/${submissionId}/email`,
     { method: 'POST', credentials: 'include' }
   )
-  if (!response.ok) {
-    const err = await response.json()
-    throw new Error(err.detail || 'Failed to email report')
-  }
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to email report')
+  return response.json()
+}
+
+// Drafts a second-person rewrite of a student's report (all 5 sections) for a
+// teacher to review/edit before sending — generated fresh on each call, right
+// before "Email to student" is used, never cached/persisted server-side.
+export async function draftStudentEmail(courseworkId, submissionId) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions/${submissionId}/draft-student-email`,
+    { method: 'POST', credentials: 'include' }
+  )
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to draft student email')
   return response.json()
 }
 
 // Sends one student's report directly to the student's own email, instead of
 // to the teacher — the "student agency" path, so the student gets feedback
 // without the teacher having to manually forward it themselves.
-// nextStepOverride is optional — lets a teacher tailor that one section's
-// wording (e.g. "you should..." instead of "the student should...") for just
-// this email, without changing the report as stored.
-export async function sendReportToStudent(courseworkId, submissionId, nextStepOverride) {
+// sectionOverrides is optional — lets a teacher tailor any section's wording
+// (e.g. "you should..." instead of "the student should...") for just this
+// email, without changing the report as stored. Keys: submissionSummary,
+// understands, misconceptions, submissionQuality, nextStep.
+export async function sendReportToStudent(courseworkId, submissionId, sectionOverrides = {}) {
   const response = await fetch(
     `${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions/${submissionId}/send-to-student`,
     {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ next_step_override: nextStepOverride || null }),
+      body: JSON.stringify({
+        submission_summary_override: sectionOverrides.submissionSummary || null,
+        understands_override: sectionOverrides.understands || null,
+        misconceptions_override: sectionOverrides.misconceptions || null,
+        submission_quality_override: sectionOverrides.submissionQuality || null,
+        next_step_override: sectionOverrides.nextStep || null,
+      }),
     }
   )
-  if (!response.ok) {
-    const err = await response.json()
-    throw new Error(err.detail || 'Failed to send report to student')
-  }
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to send report to student')
   return response.json()
 }
 

@@ -1,32 +1,42 @@
 import { useEffect, useMemo, useState } from 'react'
-import { syncCourse } from '../lib/api'
+import { getCourseAssignments } from '../lib/api'
 import './Screens.css'
 
-// Module-scoped (not component state) so it survives navigating away and back —
-// skips re-syncing a course that was already synced in the last 10s, so quick
-// back-and-forth navigation doesn't spam Google's API
-const lastSyncedAt = new Map()
-const SYNC_DEBOUNCE_MS = 10_000
-
-// Second screen — lists assignment titles for the selected class.
+// Second screen — lists assignment titles for the selected class. Assignment
+// data is fetched fresh, live from Google, every time this screen opens for a
+// class — it's read-only and doesn't sync anything into our database. Syncing
+// (submissions, content) only happens per-assignment, once a teacher actually
+// opens one — see AssignmentDetailPage.
 // Clicking an assignment drills down into AssignmentDetailPage.
-function AssignmentsPage({ courseId, courseName, gcAssignments, synced, onBack, onSelectAssignment, onDataChange }) {
+function AssignmentsPage({ courseId, synced, onBack, onSelectAssignment }) {
   const [searchQuery, setSearchQuery] = useState('')
+  const [gcAssignments, setGcAssignments] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
-  // Syncing is automatic — opening or revisiting a course's Coursework screen
-  // syncs every one of its assignments, so there's no manual "sync" button here
   useEffect(() => {
     if (!courseId) return
-    const last = lastSyncedAt.get(courseId)
-    if (last && Date.now() - last < SYNC_DEBOUNCE_MS) return
-    lastSyncedAt.set(courseId, Date.now())
-    syncCourse(courseId, courseName).then(onDataChange).catch(() => {})
-  }, [courseId, courseName, onDataChange])
+
+    async function load() {
+      setLoading(true)
+      setError(null)
+      try {
+        const data = await getCourseAssignments(courseId)
+        setGcAssignments(data.coursework)
+        if (data.failed) setError("Couldn't load some assignments for this class. Please refresh.")
+      } catch {
+        setError('Failed to load assignments from Google Classroom. Please try again in a moment.')
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+  }, [courseId])
 
   const assignments = useMemo(() => {
-    const filtered = gcAssignments
-      .filter((a) => a.course_id === courseId)
-      .filter((a) => a.title.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+    const filtered = gcAssignments.filter((a) =>
+      a.title.toLowerCase().includes(searchQuery.trim().toLowerCase())
+    )
 
     // Always sorted by due date — it's the actionable signal (what needs attention
     // soonest), not a choice a teacher needs to make. Assignments with none set fall
@@ -37,7 +47,7 @@ function AssignmentsPage({ courseId, courseName, gcAssignments, synced, onBack, 
       if (!b.due_date) return -1
       return new Date(a.due_date) - new Date(b.due_date) // soonest/most-overdue first
     })
-  }, [gcAssignments, courseId, searchQuery])
+  }, [gcAssignments, searchQuery])
 
   const syncedByGcId = useMemo(() => {
     const map = new Map()
@@ -67,37 +77,37 @@ function AssignmentsPage({ courseId, courseName, gcAssignments, synced, onBack, 
           />
         </div>
 
-        {assignments.length === 0 ? (
+        {loading && <p className="screen-status">Loading assignments ..</p>}
+        {error && <p className="screen-status screen-status--error">{error}</p>}
+
+        {!loading && !error && assignments.length === 0 ? (
           <p className="empty-state">
             {searchQuery ? 'No assignments match your search.' : 'No coursework made for this class yet.'}
           </p>
         ) : (
-          <ul className="item-list">
-            {assignments.map((assignment) => {
-              const syncedRecord = syncedByGcId.get(assignment.google_coursework_id) || null
+          !loading && !error && (
+            <ul className="item-list">
+              {assignments.map((assignment) => {
+                const syncedRecord = syncedByGcId.get(assignment.google_coursework_id) || null
 
-              return (
-                <li key={assignment.google_coursework_id}>
-                  <button
-                    className="item-card"
-                    onClick={() => onSelectAssignment(assignment, syncedRecord)}
-                  >
-                    <div className="item-info">
-                      <span className="item-name">{assignment.title}</span>
-                      {syncedRecord && (
-                        <span className="item-meta">
-                          {syncedRecord.submission_count} {syncedRecord.submission_count === 1 ? 'submission' : 'submissions'}
-                        </span>
-                      )}
-                    </div>
-                    <div className="item-badges">
-                      <span className="chevron">›</span>
-                    </div>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
+                return (
+                  <li key={assignment.google_coursework_id}>
+                    <button
+                      className="item-card"
+                      onClick={() => onSelectAssignment(assignment, syncedRecord)}
+                    >
+                      <div className="item-info">
+                        <span className="item-name">{assignment.title}</span>
+                      </div>
+                      <div className="item-badges">
+                        <span className="chevron">›</span>
+                      </div>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )
         )}
       </main>
     </div>

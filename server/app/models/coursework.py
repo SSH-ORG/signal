@@ -15,11 +15,18 @@ class Coursework(Base):
     google_course_id = Column(Text)                                           # Google Classroom course (class) ID — needed to re-sync submissions in the background
     course_name = Column(Text, default="")                                    # Google Classroom course name — stored so it's available even after a course is archived
     due_date = Column(DateTime, nullable=True)                                # From Classroom's dueDate/dueTime — null if the assignment has none set
-    student_count = Column(Integer, nullable=True)                           # Total enrolled in the class (not just submitted) — fetched once per course, not per assignment
 
-    # One coursework has many submissions (one per student)
-    # cascade="all, delete" means deleting a coursework also deletes its submissions
-    submissions = relationship("Submission", back_populates="coursework", cascade="all, delete")
+    # One coursework has many submissions (one per enrolled student, see Submission).
+    # cascade="all, delete" means deleting a coursework also deletes its submissions.
+    # Ordered by submission_id here, once, as the single source of truth — build_report's
+    # "Student N" numbering and get_submissions_list both depend on a stable order, and
+    # previously each had to remember to sort the same way independently (a real bug we
+    # hit once already); baking it into the relationship itself removes that risk for
+    # any future caller too.
+    submissions = relationship(
+        "Submission", back_populates="coursework", cascade="all, delete",
+        order_by="Submission.submission_id",
+    )
 
     # One coursework has at most one AI-generated report
     # uselist=False makes this a single object instead of a list

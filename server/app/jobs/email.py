@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.user import User
 from app.models.coursework import Coursework
+from app.controllers.google import SUBMITTED_STATES
 
 RESEND_API_URL = "https://api.resend.com/emails"
 
@@ -30,8 +31,14 @@ def _ready_to_build_html(coursework_list, frontend_url) -> str:
     undated = sorted((cw for cw in coursework_list if not cw.due_date), key=lambda cw: cw.coursework_id)
     ordered = dated + undated
 
-    cards = "".join(
-        f"""
+    cards = ""
+    for cw in ordered:
+        # Every enrolled student has a row now (see sync_coursework), whether or
+        # not they've submitted — total enrolled is just the row count, and the
+        # "submitted" half must filter to submitted states specifically
+        total_count = len(cw.submissions)
+        submitted_count = sum(1 for s in cw.submissions if s.state in SUBMITTED_STATES)
+        cards += f"""
 <a href="{frontend_url}" style="display:block;margin-bottom:8px;background:#fff;
                                  border:1px solid #cbc9d1;border-radius:8px;text-decoration:none;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
@@ -42,7 +49,7 @@ def _ready_to_build_html(coursework_list, frontend_url) -> str:
         </div>
         <div style="font-size:12px;color:#6b6375;margin-top:3px;">
           {cw.course_name or 'Class'}
-          &middot; {len(cw.submissions)}{f' of {cw.student_count}' if cw.student_count else ''} submission{'s' if len(cw.submissions) != 1 else ''}
+          &middot; {submitted_count}{f' of {total_count}' if total_count else ''} submission{'s' if submitted_count != 1 else ''}
           &middot; {f'due {_format_due_date(cw.due_date)}' if cw.due_date else 'no due date'}
         </div>
       </td>
@@ -52,8 +59,6 @@ def _ready_to_build_html(coursework_list, frontend_url) -> str:
     </tr>
   </table>
 </a>"""
-        for cw in ordered
-    )
     return f"""
 <div style="border:1px solid #e8e8e8;border-radius:10px;overflow:hidden;">
   <div style="background:#f8f9fa;padding:14px 18px;border-bottom:1px solid #e8e8e8;">
