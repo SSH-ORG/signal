@@ -17,6 +17,11 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 # attachments only) — multiple choice questions aren't pulled in at all
 SUPPORTED_WORK_TYPES = {"SHORT_ANSWER_QUESTION", "ASSIGNMENT"}
 
+# A submission only counts as real, analyzable work in these states — CREATED/NEW
+# means the student hasn't turned it in yet, and RECLAIMED_BY_STUDENT means they
+# turned it in and then pulled it back
+SUBMITTED_STATES = {"TURNED_IN", "RETURNED"}
+
 
 def _auth_headers(user: User) -> dict:
     # Helper that builds the Authorization header using the teacher's stored access token
@@ -77,7 +82,6 @@ async def _extract_submission_content(submission: dict, user: User, db: Session,
                 continue
 
             file_id = drive_file.get("id")
-            title = drive_file.get("title", "Document")
 
             try:
                 # A Doc's Drive file ID doubles as its Docs API document ID, so this
@@ -92,11 +96,18 @@ async def _extract_submission_content(submission: dict, user: User, db: Session,
                 )
                 if doc_resp.status_code == 200:
                     content = _extract_doc_text(doc_resp.json()).strip()
-                    texts.append(content if content else f"[Empty document: {title}]")
-                else:
-                    texts.append(f"[Could not read: {title}]")
+                    if content:
+                        texts.append(content)
+                # A blank doc or a non-200 (wrong file type, permissions, etc.)
+                # contributes nothing rather than a placeholder string — this
+                # submission still gets a row (its state confirms it was turned
+                # in), just with no readable content, same as a blank Google Doc.
+                # A fake "[Empty document: ...]" string used to end up stored as
+                # if it were real content, which both defeated the Empty
+                # submission badge and would have been sent to the AI as if the
+                # student had actually written that.
             except Exception:
-                texts.append(f"[Could not read: {title}]")
+                pass
 
         return "\n\n".join(texts) if texts else None
 
@@ -174,9 +185,9 @@ async def _fetch_course_roster(course_id: str, user: User, db: Session, client: 
 
 
 async def fetch_course_roster(course_id: str, user: User, db: Session) -> list[dict]:
-    # Public, on-demand read of a course's roster — used by the Students tab so
-    # non-submitters can be listed too, without persisting roster data anywhere.
-    # A pure read, same pattern as fetch_rubric/fetch_assignment_description.
+    # On-demand read of a course's roster — used by report.py's send_student_report
+    # to look up a student's email address (not stored anywhere) so their report
+    # can be sent directly to them. A pure read, nothing saved to our database.
     async with httpx.AsyncClient() as client:
         roster = await _fetch_course_roster(course_id, user, db, client)
     return [
@@ -339,12 +350,13 @@ async def fetch_assignment_description(google_coursework_id: str, course_id: str
     return {"description": resp.json().get("description", "")}
 
 
-async def fetch_google_coursework(user: User, db: Session) -> dict:
-    # Fetches all active courses and their assignments from Google Classroom
-    # Returns every active course (even ones with no assignments yet) alongside
-    # a flat list of assignments across all courses the teacher owns
+async def fetch_google_courses(user: User, db: Session) -> dict:
+    # Fetches every active course from Google Classroom — a live, read-only list
+    # of course names only. Assignment data is fetched separately, per course,
+    # only once a teacher actually opens that course (see fetch_course_coursework) —
+    # this used to also pull every course's assignments here, which meant a
+    # multi-second sequential chain of Google calls on every single Courses visit.
     async with httpx.AsyncClient() as client:
-        # Step 1 — get all active courses where this teacher is the owner
         courses_resp = await _get_with_refresh(
             client,
             f"{CLASSROOM_BASE}/courses",
@@ -369,75 +381,6 @@ async def fetch_google_coursework(user: User, db: Session) -> dict:
         # something a teacher can meaningfully open and sync assignments from
         courses = [c for c in all_courses if c.get("courseState") == "ACTIVE"]
 
-        all_coursework = []
-        failed_course_names = []  # Courses whose coursework fetch genuinely failed (not just empty)
-
-        # Deletion reconciliation and a roster fetch both used to run here on every single
-        # visit to this screen, for every course — real, duplicated work, since the exact
-        # same reconciliation already runs the moment a teacher opens that course's
-        # Coursework screen, and student_count isn't shown anywhere on this screen anyway.
-        # Dropping both removed the redundant network round-trip chain that was causing a
-        # multi-second load delay on every Courses visit.
-
-        # Step 2 — for each course, get all its assignments. Paginated — a class's
-        # coursework list can exceed a single page over the course of a semester.
-        for course in courses:
-            coursework_list = []
-            page_token = None
-            fetch_failed = False
-
-            while True:
-                cw_resp = await _get_with_refresh(
-                    client,
-                    f"{CLASSROOM_BASE}/courses/{course['id']}/courseWork",
-                    user, db,
-                    params={"pageToken": page_token} if page_token else {},
-                )
-
-                # A 404 here just means no assignments exist for this course — skip it
-                if cw_resp.status_code == 404:
-                    break
-
-                if cw_resp.status_code != 200:
-                    # A real failure (not "no assignments yet") — log it and flag the
-                    # course so the teacher isn't shown an empty class that's actually broken
-                    print(f"Failed to fetch coursework for course {course['id']} ({course.get('name')}): {cw_resp.status_code} {cw_resp.text}")
-                    fetch_failed = True
-                    break
-
-                page = cw_resp.json()
-                coursework_list.extend(page.get("courseWork", []))
-
-                page_token = page.get("nextPageToken")
-                if not page_token:
-                    break
-
-            if fetch_failed:
-                failed_course_names.append(course.get("name", "Untitled course"))
-
-            # Only short-answer questions and free-form assignments are supported
-            coursework_list = [cw for cw in coursework_list if cw.get("workType") in SUPPORTED_WORK_TYPES]
-
-            # Only show published assignments — DRAFT isn't visible to students yet
-            # (so there's nothing to sync), and DELETED is, per Google's own docs,
-            # still returned to the teacher for a while after being removed
-            coursework_list = [cw for cw in coursework_list if cw.get("state") == "PUBLISHED"]
-
-            for cw in coursework_list:
-                due_date = _parse_due_date(cw)
-                all_coursework.append({
-                    "google_coursework_id": cw["id"],
-                    "course_id": course["id"],              # Needed by the sync endpoint
-                    "title": cw.get("title", "Untitled"),
-                    "description": cw.get("description", ""),  # Pre-fills the teacher's context field
-                    "course_name": course.get("name", ""),  # Which class this assignment belongs to
-                    "due_date": due_date.isoformat() if due_date else None,
-                    "created_at": cw.get("creationTime"),  # Always present — Classroom's own ISO timestamp
-                })
-
-        # Every active course, regardless of whether it has any assignments yet —
-        # the Classes page lists all of these; AssignmentsPage shows an empty
-        # state for ones with nothing in all_coursework
         courses_out = [
             {
                 "course_id": course["id"],
@@ -446,27 +389,65 @@ async def fetch_google_coursework(user: User, db: Session) -> dict:
             for course in courses
         ]
 
-    # Reconcile stored course_name against live Classroom data on every load — covers
-    # rows whose course_name was never saved correctly (e.g. a past sync bug) or
-    # whose class was renamed since it was synced. Only touches rows still in the live list,
-    # so classes that are actually archived keep their last-known name instead of
-    # being overwritten.
-    live_names = {cw["google_coursework_id"]: cw["course_name"] for cw in all_coursework}
-    if live_names:
-        stored = db.query(Coursework).filter(
-            Coursework.user_id == user.user_id,
-            Coursework.google_coursework_id.in_(live_names.keys()),
-        ).all()
-        changed = False
-        for row in stored:
-            live_name = live_names[row.google_coursework_id]
-            if live_name and row.course_name != live_name:
-                row.course_name = live_name
-                changed = True
-        if changed:
-            db.commit()
+    return {"courses": courses_out}
 
-    return {"courses": courses_out, "coursework": all_coursework, "failed_courses": failed_course_names}
+
+async def fetch_course_coursework(course_id: str, user: User, db: Session) -> dict:
+    # Fetches one course's live assignment list from Google Classroom — a pure
+    # read, nothing saved. Used by the Assignments screen to show titles/due
+    # dates before any of them have been individually synced.
+    coursework_list = []
+    page_token = None
+    fetch_failed = False
+
+    async with httpx.AsyncClient() as client:
+        while True:
+            cw_resp = await _get_with_refresh(
+                client,
+                f"{CLASSROOM_BASE}/courses/{course_id}/courseWork",
+                user, db,
+                params={"pageToken": page_token} if page_token else {},
+            )
+
+            # A 404 here just means no assignments exist for this course — skip it
+            if cw_resp.status_code == 404:
+                break
+
+            if cw_resp.status_code != 200:
+                # A real failure (not "no assignments yet") — log it and flag it
+                # so the teacher isn't shown an empty class that's actually broken
+                print(f"Failed to fetch coursework for course {course_id}: {cw_resp.status_code} {cw_resp.text}")
+                fetch_failed = True
+                break
+
+            page = cw_resp.json()
+            coursework_list.extend(page.get("courseWork", []))
+
+            page_token = page.get("nextPageToken")
+            if not page_token:
+                break
+
+    # Only short-answer questions and free-form assignments are supported
+    coursework_list = [cw for cw in coursework_list if cw.get("workType") in SUPPORTED_WORK_TYPES]
+
+    # Only show published assignments — DRAFT isn't visible to students yet
+    # (so there's nothing to sync), and DELETED is, per Google's own docs,
+    # still returned to the teacher for a while after being removed
+    coursework_list = [cw for cw in coursework_list if cw.get("state") == "PUBLISHED"]
+
+    assignments = []
+    for cw in coursework_list:
+        due_date = _parse_due_date(cw)
+        assignments.append({
+            "google_coursework_id": cw["id"],
+            "course_id": course_id,              # Needed by the sync endpoint
+            "title": cw.get("title", "Untitled"),
+            "description": cw.get("description", ""),  # Pre-fills the teacher's context field
+            "due_date": due_date.isoformat() if due_date else None,
+            "created_at": cw.get("creationTime"),  # Always present — Classroom's own ISO timestamp
+        })
+
+    return {"coursework": assignments, "failed": fetch_failed}
 
 
 async def sync_coursework(
@@ -474,16 +455,15 @@ async def sync_coursework(
     course_id: str,
     user: User,
     db: Session,
-    context: str | None = None,
     course_name: str = "",
     due_date: str | None = None,
-    student_count: int | None = None,
     roster: dict | None = None,
 ) -> dict:
     # Syncs a Google Classroom assignment into our database
     # If it was already synced before, syncs any new submissions instead of blocking
-    # due_date/student_count are optional — pass them through when the caller already
-    # has fresh values (e.g. from fetch_google_coursework) to avoid re-fetching them here
+    # due_date is optional — pass it through when the caller already has a fresh
+    # value (e.g. sync_course_coursework, which fetches the whole course's
+    # coursework list anyway) to avoid re-fetching it here
 
     # Check if this assignment has been synced before
     existing = db.query(Coursework).filter(
@@ -504,13 +484,11 @@ async def sync_coursework(
                 coursework.course_name = course_name
             if course_id and not coursework.google_course_id:
                 coursework.google_course_id = course_id
-            # due_date/student_count aren't "created once" facts like context — they can
-            # genuinely change (a teacher extends a deadline, the roster grows), so these
-            # always take the freshest value passed in rather than only backfilling
+            # due_date isn't a "created once" fact like context — it can genuinely
+            # change (a teacher extends a deadline), so it always takes the
+            # freshest value passed in rather than only backfilling
             if due_date is not None:
                 coursework.due_date = parsed_due_date
-            if student_count is not None:
-                coursework.student_count = student_count
             db.commit()
         else:
             # First time syncing — fetch assignment details and create a record
@@ -525,11 +503,14 @@ async def sync_coursework(
 
             cw_data = cw_resp.json()
 
-            # Use the context the teacher reviewed/edited on the Assignment Detail screen
-            # Falls back to the raw Classroom description if none was passed in
+            # Assignment Description starts prefilled from Classroom's own text —
+            # Mental Model and Rubric start blank, since the teacher hasn't had a
+            # chance to write/paste anything yet at the moment of first sync.
+            # Editing any of these afterward always goes through PATCH
+            # /api/coursework/{id} (see update_context), never through sync.
             coursework = Coursework(
                 title=cw_data.get("title", "Untitled"),
-                context=context if context is not None else cw_data.get("description", "") or "",
+                assignment_description=cw_data.get("description", "") or "",
                 user_id=user.user_id,
                 google_coursework_id=google_coursework_id,
                 google_course_id=course_id,  # Stored so the background job can re-sync without a teacher being present
@@ -537,7 +518,6 @@ async def sync_coursework(
                 # Falls back to parsing the freshly-fetched courseWork detail directly,
                 # in case the caller didn't already have a live due date on hand
                 due_date=parsed_due_date if due_date is not None else _parse_due_date(cw_data),
-                student_count=student_count,
             )
             db.add(coursework)
             db.commit()
@@ -563,54 +543,84 @@ async def sync_coursework(
 
         submissions_data = subs_resp.json().get("studentSubmissions", [])
 
-        # Build a lookup of existing submissions so we can skip duplicates and backfill names
+        # One row per entry Google returns — that's every enrolled student, whether
+        # or not they've submitted anything (state tells us which). Kept live on every
+        # sync instead of writing a row once and ignoring it afterward, so a student
+        # editing/resubmitting after their first sync is actually picked up, and a
+        # non-submitter is something we already know rather than a separate roster
+        # cross-reference the frontend has to fetch and compute itself.
         existing_by_google_id = {s.google_submission_id: s for s in coursework.submissions}
-        new_count = 0
-
-        # Backfill student_name on submissions that were synced before the roster feature existed
-        if roster:
-            for existing_sub in coursework.submissions:
-                if existing_sub.student_name is None and existing_sub.google_user_id:
-                    entry = roster.get(existing_sub.google_user_id)
-                    if entry:
-                        existing_sub.student_name = entry["name"]
+        newly_submitted_count = 0
 
         for sub in submissions_data:
-            # Skip if we already have this submission
-            if sub["id"] in existing_by_google_id:
-                continue
-
-            content = await _extract_submission_content(sub, user, db, client)
-
-            # Skip submissions with no content (student hasn't turned anything in yet)
-            if not content:
-                continue
-
+            state = sub.get("state")
             user_id = sub.get("userId")
-            submission = Submission(
-                content=content,
-                coursework_id=coursework.coursework_id,
-                google_submission_id=sub["id"],
-                google_user_id=user_id,
-                student_name=roster.get(user_id, {}).get("name"),  # None if roster fetch failed or student not found
-            )
-            db.add(submission)
-            new_count += 1
+            updated_at = sub.get("updateTime")
+            is_submitted = state in SUBMITTED_STATES
+            existing = existing_by_google_id.get(sub["id"])
+
+            if existing:
+                was_submitted = existing.state in SUBMITTED_STATES
+                if not is_submitted:
+                    # Not turned in (still a draft), or pulled back since we last
+                    # looked — clear stale content rather than leave old work visible.
+                    # Also clear any previously-built individual report: it analyzed
+                    # content that no longer represents this submission, and leaving
+                    # it in place would keep showing a "view report" row instead of
+                    # the Empty submission state the current data actually calls for.
+                    existing.content = ""
+                    existing.student_report = None
+                elif updated_at != existing.google_updated_at:
+                    # Only re-extract content (a real Docs API fetch) when Google
+                    # reports this submission actually changed since last sync —
+                    # otherwise every sync would re-fetch every student's unchanged
+                    # work, every time a teacher opens the page. Same reasoning as
+                    # above — a previously-built report is now stale against
+                    # whatever the new content turns out to be, so clear it too.
+                    existing.content = await _extract_submission_content(sub, user, db, client) or ""
+                    existing.student_report = None
+                if is_submitted and not was_submitted:
+                    newly_submitted_count += 1
+                existing.state = state
+                existing.google_updated_at = updated_at
+                if existing.student_name is None and user_id:
+                    entry = roster.get(user_id)
+                    if entry:
+                        existing.student_name = entry["name"]
+            else:
+                content = (await _extract_submission_content(sub, user, db, client) or "") if is_submitted else ""
+                submission = Submission(
+                    content=content,
+                    coursework_id=coursework.coursework_id,
+                    google_submission_id=sub["id"],
+                    google_user_id=user_id,
+                    student_name=roster.get(user_id, {}).get("name"),  # None if roster fetch failed or student not found
+                    state=state,
+                    google_updated_at=updated_at,
+                )
+                db.add(submission)
+                if is_submitted:
+                    newly_submitted_count += 1
 
         db.commit()
+
+    total_submissions = sum(1 for s in coursework.submissions if s.state in SUBMITTED_STATES)
 
     return {
         "coursework_id": coursework.coursework_id,
         "title": coursework.title,
-        "new_submissions": new_count,
-        "total_submissions": len(coursework.submissions) + new_count,
+        "new_submissions": newly_submitted_count,
+        "total_submissions": total_submissions,
     }
 
 
 async def sync_course_coursework(course_id: str, course_name: str, user: User, db: Session) -> dict:
-    # Syncs every published assignment in one course at once — this is what makes
-    # syncing automatic: it runs whenever a teacher opens or revisits that course's
-    # Coursework screen, instead of requiring a manual first click per assignment
+    # Syncs every published assignment in one course at once. Interactive syncing
+    # (opening a course/assignment in Signal) now happens per-assignment, only when
+    # a teacher actually opens it — see sync_coursework. This bulk version is used
+    # solely by the background notification scheduler, so nothing here blocks a
+    # teacher's page load; the loop below stays sequential on purpose since these
+    # calls share one database session, which isn't safe to use concurrently
     async with httpx.AsyncClient() as client:
         coursework_list = []
         page_token = None
@@ -636,9 +646,9 @@ async def sync_course_coursework(course_id: str, course_name: str, user: User, d
             if not page_token:
                 break
 
-        # Same reconciliation as fetch_google_coursework — the while loop above only
-        # exits normally on full success (it raises otherwise), so the live list here
-        # is known-complete and safe to reconcile against
+        # The while loop above only exits normally on full success (it raises
+        # otherwise), so the live list here is known-complete and safe to reconcile
+        # against — catches assignments deleted in Classroom since they were last synced
         live_ids = {cw["id"] for cw in coursework_list}
         await _reconcile_missing_coursework(course_id, course_name, live_ids, user, db, client)
 
@@ -650,7 +660,6 @@ async def sync_course_coursework(course_id: str, course_name: str, user: User, d
         # Fetched once for the whole course and reused below — sync_coursework
         # would otherwise redundantly re-fetch the same roster for every assignment
         roster = await _fetch_course_roster(course_id, user, db, client)
-        student_count = len(roster) or None
 
     synced_count = 0
     for cw in coursework_list:
@@ -662,7 +671,6 @@ async def sync_course_coursework(course_id: str, course_name: str, user: User, d
             db=db,
             course_name=course_name,
             due_date=due_date.isoformat() if due_date else None,
-            student_count=student_count,
             roster=roster,
         )
         synced_count += 1

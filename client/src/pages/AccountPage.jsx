@@ -111,6 +111,7 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="Your name"
               />
+              <p className="detail-section-hint">This name is used on emails sent to students.</p>
             </label>
             <label className="account-field">
               <span>Email</span>
@@ -128,7 +129,7 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
 
             <div className="detail-actions">
               <button type="submit" className="primary-btn" disabled={savingProfile}>
-                {savingProfile ? 'Saving…' : 'Save changes'}
+                {savingProfile ? 'Saving ..' : 'Save changes'}
               </button>
             </div>
           </form>
@@ -220,7 +221,7 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
                   onClick={handleDeleteAccount}
                   disabled={deleting}
                 >
-                  {deleting ? 'Deleting…' : 'Yes, delete my account'}
+                  {deleting ? 'Deleting ..' : 'Yes, delete my account'}
                 </button>
                 <button
                   type="button"

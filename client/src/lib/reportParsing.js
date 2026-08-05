@@ -62,3 +62,24 @@ export function parseFlaggedStudents(classwideContent) {
     return { name, misconception: group ? stripBold(group.label) : null }
   })
 }
+
+// Pulls every student named under Solid Themes out of a classwide report —
+// same purpose as parseFlaggedStudents, for the other end of the spectrum.
+// A name can appear under more than one theme; deduped since the Student tab
+// only needs "is this student named at all," not which/how many themes.
+export function parseSolidStudents(classwideContent) {
+  if (!classwideContent) return []
+  const sections = splitSections(classwideContent)
+  const groups = parseGroups(findBody(sections, 'Solid Themes'), 'Theme')
+  const seen = new Set()
+  const names = []
+  for (const group of groups) {
+    for (const name of group.students) {
+      const key = name.trim().toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      names.push(name)
+    }
+  }
+  return names
+}

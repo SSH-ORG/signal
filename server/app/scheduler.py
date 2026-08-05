@@ -2,13 +2,13 @@ import asyncio
 from datetime import datetime, date
 
 from app.jobs.email import send_notifs
-from app.controllers.google import fetch_google_coursework, sync_course_coursework
+from app.controllers.google import fetch_google_courses, sync_course_coursework
 from app.database import SessionLocal
 from app.models.user import User
 
 _task: asyncio.Task | None = None
 # No longer syncing Classroom data here on a timer — syncing now happens on demand
-# (see fetch_google_coursework/sync_course_coursework), and report generation is a
+# (see fetch_google_courses/sync_course_coursework), and report generation is a
 # deliberate teacher action (the Build button), never automatic. This loop only
 # exists to check the notification schedule, so it doesn't need to tick every few
 # seconds — checking every 30 minutes still reliably catches 7am UTC.
@@ -58,7 +58,7 @@ async def _send_notifs_batch(window_hours: int, pref_values: tuple) -> None:
                 # (or week) for someone who explicitly opted into these emails, so
                 # "ready to build" is accurate even for assignments they haven't
                 # opened in Signal yet.
-                live = await fetch_google_coursework(user, db)
+                live = await fetch_google_courses(user, db)
                 for course in live["courses"]:
                     await sync_course_coursework(course["course_id"], course["course_name"], user, db)
 

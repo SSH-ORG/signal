@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getAllReports, deleteReport } from '../lib/api'
-import { loadStoredCourseColors, getCourseColor } from '../lib/courseColors'
 import Icon from '../components/Icon'
 import './Screens.css'
 import './ReportsPage.css'
@@ -19,14 +18,10 @@ function ReportsPage({ onViewAssignment, onGoToClasses }) {
 
   const [selectedClass, setSelectedClass] = useState(null) // course_name, or null for the class-card grid
   const [search, setSearch] = useState('') // assignment-title search, scoped to the selected class
+  const [classSearch, setClassSearch] = useState('') // class-name search, scoped to the class-card grid
 
   const [deleteFeedback, setDeleteFeedback] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
-
-  // Read fresh on every mount (i.e. every time this screen is navigated to),
-  // so a color changed on the Courses screen shows up here without needing a
-  // full page reload — switching screens already unmounts/remounts this page
-  const [courseColors] = useState(loadStoredCourseColors)
 
   useEffect(() => {
     getAllReports()
@@ -35,19 +30,17 @@ function ReportsPage({ onViewAssignment, onGoToClasses }) {
       .finally(() => setLoading(false))
   }, [])
 
-  // One card per class that has at least one report. course_id is whichever
-  // google_course_id shows up first for that class name, used to look up the
-  // same custom color set on the Courses screen.
+  // One card per class that has at least one report
   const classes = useMemo(() => {
-    const byName = new Map()
-    reports.forEach(r => {
-      const name = r.course_name || 'Archived Class'
-      if (!byName.has(name)) byName.set(name, { course_name: name, course_id: r.google_course_id })
-      const entry = byName.get(name)
-      if (!entry.course_id && r.google_course_id) entry.course_id = r.google_course_id
-    })
-    return Array.from(byName.values())
+    const names = new Set(reports.map(r => r.course_name || 'Archived Class'))
+    return Array.from(names, (course_name) => ({ course_name }))
   }, [reports])
+
+  // Class-card grid, name-searched
+  const filteredClasses = useMemo(() => {
+    const q = classSearch.trim().toLowerCase()
+    return classes.filter(c => !q || c.course_name.toLowerCase().includes(q))
+  }, [classes, classSearch])
 
   // Reports for the selected class — title-searched, always sorted by report
   // build date (most recent first). Not a toggle — this is the one sort that matters here.
@@ -85,7 +78,7 @@ function ReportsPage({ onViewAssignment, onGoToClasses }) {
 
   if (loading) return (
     <div className="screen">
-      <main className="screen-main"><p className="screen-status">Loading reports…</p></main>
+      <main className="screen-main"><p className="screen-status">Loading reports ..</p></main>
     </div>
   )
 
@@ -113,25 +106,42 @@ function ReportsPage({ onViewAssignment, onGoToClasses }) {
                 </button>
               </p>
             ) : (
-              <div className="course-grid">
-                {classes.map((c, i) => {
-                  const color = getCourseColor(c.course_id, i, courseColors)
-                  return (
-                    <div key={c.course_name} className="course-card" style={{ '--course-color': color }}>
-                      <button
-                        type="button"
-                        className="course-card-main"
-                        onClick={() => handleSelectClass(c.course_name)}
-                      >
-                        <div className="course-card-banner" style={{ background: color }}>
-                          <span className="course-card-name">{c.course_name}</span>
-                        </div>
-                        <div className="course-card-body" />
-                      </button>
-                    </div>
-                  )
-                })}
-              </div>
+              <>
+                <div className="coursework-controls">
+                  <input
+                    type="text"
+                    className="search-input"
+                    placeholder="Search classes…"
+                    value={classSearch}
+                    onChange={e => setClassSearch(e.target.value)}
+                    aria-label="Search classes"
+                  />
+                </div>
+
+                {filteredClasses.length === 0 ? (
+                  <p className="empty-state">No classes match your search.</p>
+                ) : (
+                  <div className="course-grid">
+                    {filteredClasses.map((c) => (
+                      <div key={c.course_name} className="course-card" style={{ '--course-color': 'var(--accent)' }}>
+                        <button
+                          type="button"
+                          className="course-card-main"
+                          onClick={() => handleSelectClass(c.course_name)}
+                        >
+                          {/* Fixed to the brand purple, not the teacher's per-course
+                              Courses-screen color — these are Signal-generated
+                              reports, kept visually distinct on purpose. */}
+                          <div className="course-card-banner" style={{ background: 'var(--accent)' }}>
+                            <span className="course-card-name">{c.course_name}</span>
+                          </div>
+                          <div className="course-card-body" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </>
         ) : (
@@ -172,17 +182,16 @@ function ReportsPage({ onViewAssignment, onGoToClasses }) {
                         <div className="item-info">
                           <span className="item-name">{report.title}</span>
                           <span className="item-meta">
-                            {new Date(report.created_at).toLocaleDateString('en-US', {
-                              month: 'short', day: 'numeric', year: 'numeric',
-                            })}
-                            {' · '}
-                            {report.total_submissions} student{report.total_submissions !== 1 ? 's' : ''}
+                            <span className="reports-item-date">
+                              {new Date(report.created_at).toLocaleDateString('en-US', {
+                                month: 'short', day: 'numeric', year: 'numeric',
+                              })}
+                            </span>
                             {report.flagged_count > 0 && (
                               <span className="reports-flagged-badge">{report.flagged_count} flagged</span>
                             )}
                           </span>
                         </div>
-                        <span className="chevron">›</span>
                       </button>
                       <button
                         type="button"

@@ -9,7 +9,7 @@ import './AuthPage.css'
 // when there's no active session. Structured like a typical product landing
 // page (nav -> hero -> features -> demo video -> closing CTA -> footer),
 // with the demo section and closing CTA fading in as the user scrolls to them.
-function AuthPage({ onLoginSuccess }) {
+function AuthPage({ onLoginSuccess, message }) {
   // 'checking' | 'ok' | 'error' — purely informational; doesn't block the page
   const [serverStatus, setServerStatus] = useState('checking')
   // null while unknown, then true/false once we've checked whether a demo
@@ -69,6 +69,10 @@ function AuthPage({ onLoginSuccess }) {
             <p className="auth-status auth-status--error">
               Couldn't reach the server. Is the backend running?
             </p>
+          )}
+
+          {message && (
+            <p className="auth-status auth-status--error">{message}</p>
           )}
 
           <button className="google-button google-button--hero" type="button" onClick={handleSignIn}>

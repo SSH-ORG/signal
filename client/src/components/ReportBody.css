@@ -156,8 +156,8 @@
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--badge-color);
-  background: color-mix(in srgb, var(--badge-color) 12%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--badge-color) 35%, transparent);
+  background: var(--surface);
+  border: 2px solid var(--badge-color);
   border-radius: 100px;
   padding: 5px 12px;
 }
@@ -204,6 +204,21 @@
   box-shadow: var(--shadow);
 }
 
+/* Flagged Students only — no click-through, so no hover lift/cursor, and no
+   chevron reserving space on the right side of the card */
+.report-card--static {
+  cursor: default;
+}
+
+.report-card--static:hover {
+  transform: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.report-card--static .report-card-body {
+  padding-right: 16px;
+}
+
 .report-card-body {
   padding: 14px 40px 16px 16px;
   display: flex;
@@ -231,8 +246,17 @@
 .report-card-body--stat .report-card-stat {
   flex: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+}
+
+/* Pinned to the bottom of the card, separate from the centered count/subtext
+   above it — an auto top margin absorbs the remaining space instead of the
+   hint being centered as part of the same block */
+.report-card-body--stat .card-hint {
+  margin-top: auto;
+  padding-top: 8px;
 }
 
 /* Bottom-right cue that the whole card is clickable, replacing a "See more" button */
@@ -246,8 +270,27 @@
 }
 
 .card-number {
+  display: block;
+  width: 100%;
   font-size: 2.5rem;
   font-weight: 700;
+  text-align: center;
+}
+
+.card-subtext {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+}
+
+.card-hint {
+  margin: 8px 0 0;
+  font-size: 0.72rem;
+  color: var(--text);
+  opacity: 0.75;
+  text-align: center;
 }
 
 .card-snapshot {
@@ -282,8 +325,8 @@
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--chip-color);
-  background: color-mix(in srgb, var(--chip-color) 12%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--chip-color) 35%, transparent);
+  background: var(--surface);
+  border: 1.5px solid var(--chip-color);
   border-radius: 100px;
   padding: 4px 12px;
   white-space: nowrap;
@@ -308,6 +351,11 @@
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--text-h);
+}
+
+.report-group-glyph {
+  margin-right: 6px;
+  font-weight: 700;
 }
 
 /* ── Next Steps — numbered checklist ── */

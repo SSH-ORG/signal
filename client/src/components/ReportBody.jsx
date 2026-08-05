@@ -5,15 +5,15 @@ import './ReportBody.css'
 
 // Shared AI report renderer — used on AssignmentDetailPage (classwide + student)
 // and ReportsPage (inline expanded view).
-// mode="classwide" renders the Class Overview box + the 4 section cards
+// mode="classwide" renders the Class Summary box + the 4 section cards
 // (Flagged Students / Common Misconception / Solid Themes / Next Steps), each
 // color-coded and opening its full detail in a modal. Any other mode
 // (student reports) falls back to the original stacked-sections layout.
-function ReportBody({ content, mode }) {
+function ReportBody({ content, mode, totalStudents }) {
   const sections = splitSections(content)
 
   if (mode === 'classwide') {
-    return <ClasswideReportBody sections={sections} />
+    return <ClasswideReportBody sections={sections} totalStudents={totalStudents} />
   }
 
   return (
@@ -35,9 +35,28 @@ const SECTION_META = {
   'next-steps': { label: 'Next Steps', color: '#3b82f6', icon: 'checklist' },
 }
 
-function ClasswideReportBody({ sections }) {
-  const overviewBody = findBody(sections, 'Class Overview')
-  const overviewDetailsBody = findBody(sections, 'Overview Details')
+// Exact marker glyph colours — kept identical to the email templates
+// (report.py's COLOR dict) so a misconception/theme/next-step reads as the
+// same finding whether it's opened in the app or in an inbox
+const MARKER_COLOR = { x: '#b45309', check: '#1e8449', arrow: '#2563eb' }
+
+// Single source of truth for verdict wording/colour, mirroring VERDICT_STYLES
+// in report.py — the app and every email should always agree on this label
+const VERDICT_STYLES = {
+  strong: { label: 'Solid Understanding', color: '#27ae60' },
+  mixed: { label: 'Mixed Understanding', color: '#e67e22' },
+  weak: { label: 'Needs Review', color: '#d93025' },
+}
+
+function verdictKey(flaggedCount, solidCount) {
+  if (flaggedCount === 0) return 'strong'
+  if (flaggedCount > solidCount) return 'weak'
+  return 'mixed'
+}
+
+function ClasswideReportBody({ sections, totalStudents }) {
+  const overviewBody = findBody(sections, 'Class Summary')
+  const overviewDetailsBody = findBody(sections, 'Summary Details')
   const flaggedBody = findBody(sections, 'Flagged Students')
   const misconceptionsBody = findBody(sections, 'Common Misconceptions')
   const themesBody = findBody(sections, 'Solid Themes')
@@ -80,14 +99,9 @@ function ClasswideReportBody({ sections }) {
   // an exact number. Ratio-based (flagged vs. solid) rather than needing a
   // total submission count, since not every submission is necessarily named
   // in either list.
-  const confusionTier = flaggedCount === 0
-    ? { label: 'Strong Understanding', color: '#27ae60' }
-    : flaggedCount > solidCount
-      ? { label: 'Needs Attention', color: '#d93025' }
-      : { label: 'Mixed Understanding', color: '#e67e22' }
+  const confusionTier = VERDICT_STYLES[verdictKey(flaggedCount, solidCount)]
 
   const cards = [
-    { id: 'flagged', stat: <span className="card-number" style={{ color: SECTION_META.flagged.color }}>{flaggedCount}</span> },
     {
       id: 'misconceptions',
       stat: <CardSnapshot text={misconceptionGroups[0]?.label} moreCount={misconceptionGroups.length - 1} />,
@@ -128,6 +142,27 @@ function ClasswideReportBody({ sections }) {
         </button>
 
         <div className="report-card-row">
+          {/* Flagged Students is deliberately static, not a button — matches the
+              emailed report exactly (count only, no names, no click-through).
+              A flagged student's name always appears again under whichever
+              misconception earned them the flag, so listing names here too
+              would just show the same finding twice. */}
+          <div className="report-card report-card--static" style={{ '--section-color': SECTION_META.flagged.color }}>
+            <div className="section-banner">
+              <Icon name={SECTION_META.flagged.icon} className="section-banner-icon" />
+              <h4 className="section-banner-title">{SECTION_META.flagged.label}</h4>
+            </div>
+            <div className="report-card-body report-card-body--stat">
+              <div className="report-card-stat">
+                <span className="card-number" style={{ color: SECTION_META.flagged.color }}>{flaggedCount}</span>
+                {Boolean(totalStudents) && (
+                  <p className="card-subtext">of {totalStudents} students didn&rsquo;t show a sufficient understanding</p>
+                )}
+              </div>
+              <p className="card-hint">See names on the Students tab.</p>
+            </div>
+          </div>
+
           {cards.map(card => {
             const meta = SECTION_META[card.id]
             return (
@@ -142,7 +177,7 @@ function ClasswideReportBody({ sections }) {
                   <Icon name={meta.icon} className="section-banner-icon" />
                   <h4 className="section-banner-title">{meta.label}</h4>
                 </div>
-                <div className={`report-card-body${card.id === 'flagged' ? ' report-card-body--stat' : ''}`}>
+                <div className="report-card-body">
                   <div className="report-card-stat">{card.stat}</div>
                   <Icon name="chevron_right" className="section-card-chevron" />
                 </div>
@@ -160,27 +195,27 @@ function ClasswideReportBody({ sections }) {
         </SectionModal>
       )}
 
-      {openModal === 'flagged' && (
-        <SectionModal meta={SECTION_META.flagged} onClose={() => setOpenModal(null)}>
-          <NameChips names={flaggedNames} color={SECTION_META.flagged.color} emptyText="No students flagged." />
-        </SectionModal>
-      )}
-
       {openModal === 'misconceptions' && (
         <SectionModal meta={SECTION_META.misconceptions} onClose={() => setOpenModal(null)}>
-          <GroupedChips groups={misconceptionGroups} color={SECTION_META.misconceptions.color} emptyText="No common misconceptions detected." />
+          <GroupedChips
+            groups={misconceptionGroups} color={SECTION_META.misconceptions.color}
+            emptyText="No common misconceptions found." glyph="✕" glyphColor={MARKER_COLOR.x}
+          />
         </SectionModal>
       )}
 
       {openModal === 'themes' && (
         <SectionModal meta={SECTION_META.themes} onClose={() => setOpenModal(null)}>
-          <GroupedChips groups={themeGroups} color={SECTION_META.themes.color} emptyText="No solid themes detected." />
+          <GroupedChips
+            groups={themeGroups} color={SECTION_META.themes.color}
+            emptyText="No solid themes found." glyph="✓" glyphColor={MARKER_COLOR.check}
+          />
         </SectionModal>
       )}
 
       {openModal === 'next-steps' && (
         <SectionModal meta={SECTION_META['next-steps']} onClose={() => setOpenModal(null)}>
-          <NumberedSteps steps={nextSteps} color={SECTION_META['next-steps'].color} />
+          <NumberedSteps steps={nextSteps} color={MARKER_COLOR.arrow} arrowIcon />
         </SectionModal>
       )}
     </div>
@@ -197,30 +232,19 @@ function CardSnapshot({ text, moreCount }) {
   )
 }
 
-// Student names as small pill chips instead of a bullet list — easier to scan,
-// especially when a group has many names
-function NameChips({ names, color, emptyText }) {
-  if (names.length === 0) return <p className="modal-empty-note">{emptyText}</p>
-  return (
-    <div className="chip-row">
-      {names.map((name, i) => (
-        <span key={i} className="name-chip" style={{ '--chip-color': color }}>
-          {stripBold(name)}
-        </span>
-      ))}
-    </div>
-  )
-}
-
 // Common Misconceptions / Solid Themes — each group's label as a small heading,
-// with its students as chips underneath
-function GroupedChips({ groups, color, emptyText }) {
+// with its students as chips underneath. glyph/glyphColor match the same
+// marker shown in front of this same finding in the emailed report.
+function GroupedChips({ groups, color, emptyText, glyph, glyphColor }) {
   if (groups.length === 0) return <p className="modal-empty-note">{emptyText}</p>
   return (
     <div className="group-list">
       {groups.map((group, i) => (
         <div key={i} className="report-group">
-          <p className="report-group-label">{stripBold(group.label)}</p>
+          <p className="report-group-label">
+            {glyph && <span className="report-group-glyph" style={{ color: glyphColor }}>{glyph}</span>}
+            {stripBold(group.label)}
+          </p>
           <div className="chip-row">
             {group.students.map((s, j) => (
               <span key={j} className="name-chip" style={{ '--chip-color': color }}>
@@ -255,18 +279,37 @@ function NumberedSteps({ steps, color, arrowIcon }) {
   )
 }
 
+function DraftTextarea({ label, value, onChange, rows = 3, disabled = false }) {
+  return (
+    <textarea
+      className="next-step-edit-textarea"
+      aria-label={label}
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+      rows={rows}
+      disabled={disabled}
+    />
+  )
+}
+
 // Curated view of one student's report — used in the Student tab's
 // popup instead of dumping every section as generic stacked paragraphs. Skips
 // the raw submission answer entirely (a Google Doc submission could be long)
 // in favor of the AI's own Submission Summary, and keeps Misconceptions/Next
 // Steps concise rather than repeating information across sections.
+//
+// When editingStudentEmail is true, every section swaps its static view for a
+// textarea bound to emailDraft (a second-person AI rewrite, drafted fresh right
+// before this view opens — see draft_student_email) so a teacher can tailor any
+// section's wording before it's sent, without any of this touching the report
+// as stored.
 export function StudentReportSummary({
   content,
   submissionContent,
   studentName,
-  editingNextStep,
-  nextStepDraft,
-  onNextStepDraftChange,
+  editingStudentEmail,
+  emailDraft,
+  onEmailDraftChange,
   onSendToStudent,
   onCancelEdit,
   sendingToStudent,
@@ -299,13 +342,28 @@ export function StudentReportSummary({
   // showing it inline unconditionally could make the modal unreadably long
   const [showSubmission, setShowSubmission] = useState(false)
 
+  function updateDraft(field) {
+    return (value) => onEmailDraftChange(field, value)
+  }
+
   return (
     <div className="student-summary">
-      {summaryBody && (
+      {(summaryBody || editingStudentEmail) && (
         <div className="student-summary-box">
           <h4 className="student-summary-box-title">Submission Summary</h4>
-          <p className="student-summary-text">{stripBold(summaryBody.trim())}</p>
-          {qualityIssue && (
+          {editingStudentEmail ? (
+            <DraftTextarea
+              label="Submission Summary wording for this student"
+              value={emailDraft?.submissionSummary}
+              onChange={updateDraft('submissionSummary')}
+              disabled={sendingToStudent}
+            />
+          ) : (
+            <p className="student-summary-text">{stripBold(summaryBody.trim())}</p>
+          )}
+          {/* Not shown while editing — the student-facing email never
+              includes Submission Quality, so it isn't part of what's edited */}
+          {!editingStudentEmail && qualityIssue && (
             <p className="student-quality-flag">
               <Icon name="error" className="student-quality-icon" />
               {qualityIssue}
@@ -331,53 +389,70 @@ export function StudentReportSummary({
       <div className="student-summary-columns">
         <div className="student-summary-box" style={{ '--box-color': SECTION_META.themes.color }}>
           <h4 className="student-summary-box-title" style={{ color: SECTION_META.themes.color }}>
-            <Icon name="check_circle" style={{ color: SECTION_META.themes.color }} /> Understands
+            <Icon name="check_circle" style={{ color: SECTION_META.themes.color }} /> {editingStudentEmail ? 'Spot On' : 'Understands'}
           </h4>
-          <IconBulletList
-            items={understands}
-            icon="check"
-            color={SECTION_META.themes.color}
-            emptyText="No understanding shown."
-          />
+          {editingStudentEmail ? (
+            <DraftTextarea
+              label="Understands wording for this student"
+              value={emailDraft?.understands}
+              onChange={updateDraft('understands')}
+              disabled={sendingToStudent}
+            />
+          ) : (
+            <IconBulletList
+              items={understands}
+              icon="check"
+              color={MARKER_COLOR.check}
+              emptyText="No understanding shown."
+            />
+          )}
         </div>
         <div className="student-summary-box" style={{ '--box-color': SECTION_META.misconceptions.color }}>
           <h4 className="student-summary-box-title" style={{ color: SECTION_META.misconceptions.color }}>
-            <Icon name="psychology_alt" style={{ color: SECTION_META.misconceptions.color }} /> Misconceptions
+            <Icon name="psychology_alt" style={{ color: SECTION_META.misconceptions.color }} /> {editingStudentEmail ? 'Almost There' : 'Misconceptions'}
           </h4>
-          <IconBulletList
-            items={misconceptions}
-            icon="close"
-            color={SECTION_META.misconceptions.color}
-            emptyText="No misconceptions detected."
-          />
+          {editingStudentEmail ? (
+            <DraftTextarea
+              label="Misconceptions wording for this student"
+              value={emailDraft?.misconceptions}
+              onChange={updateDraft('misconceptions')}
+              disabled={sendingToStudent}
+            />
+          ) : (
+            <IconBulletList
+              items={misconceptions}
+              icon="close"
+              color={MARKER_COLOR.x}
+              emptyText="No misconceptions found."
+            />
+          )}
         </div>
       </div>
 
       <div className="student-summary-box" style={{ '--box-color': SECTION_META['next-steps'].color }}>
         <h4 className="student-summary-box-title" style={{ color: SECTION_META['next-steps'].color }}>
-          <Icon name="checklist" style={{ color: SECTION_META['next-steps'].color }} /> Next Step
+          <Icon name="checklist" style={{ color: SECTION_META['next-steps'].color }} /> {editingStudentEmail ? 'Try This' : 'Next Step'}
         </h4>
-        {editingNextStep ? (
+        {editingStudentEmail ? (
           <div className="next-step-edit">
             <p className="next-step-edit-hint">
-              Shown to {studentName} as written below. Edit the wording before sending
-              to address them directly.
+              This message will be sent to {studentName} exactly as written above and below —
+              edit any section before sending.
             </p>
-            <textarea
-              className="next-step-edit-textarea"
-              aria-label="Next Step wording for this student"
-              value={nextStepDraft}
-              onChange={(e) => onNextStepDraftChange(e.target.value)}
-              rows={3}
+            <DraftTextarea
+              label="Next Step wording for this student"
+              value={emailDraft?.nextStep}
+              onChange={updateDraft('nextStep')}
+              disabled={sendingToStudent}
             />
             <div className="next-step-edit-actions">
               <button
                 type="button"
                 className="primary-btn"
                 onClick={onSendToStudent}
-                disabled={sendingToStudent || !nextStepDraft.trim()}
+                disabled={sendingToStudent || !emailDraft?.nextStep?.trim()}
               >
-                {sendingToStudent ? 'Sending…' : 'Send to Student'}
+                {sendingToStudent ? 'Sending ..' : 'Send to Student'}
               </button>
               <button
                 type="button"
@@ -390,7 +465,67 @@ export function StudentReportSummary({
             </div>
           </div>
         ) : (
-          <NumberedSteps steps={nextSteps} color={SECTION_META['next-steps'].color} arrowIcon />
+          <NumberedSteps steps={nextSteps} color={MARKER_COLOR.arrow} arrowIcon />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Curated view for a student with no submission — a single "Start Here"
+// nudge instead of a full diagnostic report, since there's no submission to
+// analyze. Mirrors StudentReportSummary's edit/send pattern but for one
+// plain-text field rather than 5 parsed sections.
+export function NudgeSummary({
+  content,
+  studentName,
+  editingNudge,
+  nudgeDraft,
+  onNudgeDraftChange,
+  onSendNudge,
+  onCancelEdit,
+  sendingNudge,
+}) {
+  const displayText = stripBold((content || '').replace(/^[-*]\s+/, '').trim())
+
+  return (
+    <div className="student-summary">
+      <div className="student-summary-box" style={{ '--box-color': SECTION_META['next-steps'].color }}>
+        <h4 className="student-summary-box-title" style={{ color: SECTION_META['next-steps'].color }}>
+          <Icon name="checklist" style={{ color: SECTION_META['next-steps'].color }} /> Start Here
+        </h4>
+        {editingNudge ? (
+          <div className="next-step-edit">
+            <p className="next-step-edit-hint">
+              This message will be sent to {studentName} exactly as written below — edit before sending.
+            </p>
+            <DraftTextarea
+              label="Start Here wording for this student"
+              value={nudgeDraft}
+              onChange={onNudgeDraftChange}
+              disabled={sendingNudge}
+            />
+            <div className="next-step-edit-actions">
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={onSendNudge}
+                disabled={sendingNudge || !nudgeDraft?.trim()}
+              >
+                {sendingNudge ? 'Sending ..' : 'Send to Student'}
+              </button>
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={onCancelEdit}
+                disabled={sendingNudge}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="student-summary-text">{displayText}</p>
         )}
       </div>
     </div>

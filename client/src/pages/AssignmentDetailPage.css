@@ -100,6 +100,10 @@
   line-height: 1.5;
 }
 
+.detail-section-hint--warning {
+  color: #b45309;
+}
+
 /* ── Context textarea ────────────────────────────────── */
 .context-textarea {
   width: 100%;
@@ -463,6 +467,30 @@
   gap: 12px;
 }
 
+/* Category box for the default (non-search) Student tab view — outlined only,
+   no solid fill, same "outline carries the meaning" language as the report's
+   own sections. Skipped entirely when a category is empty, so this never
+   shows as an empty box with nothing in it. */
+.student-group {
+  border: 2px solid var(--group-color);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.student-group-title {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--group-color);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.student-group--red { --group-color: #d93025; }
+.student-group--yellow { --group-color: #f59e0b; }
+.student-group--green { --group-color: #27ae60; }
+
 @media (max-width: 600px) {
   .student-card-grid {
     grid-template-columns: 1fr;
@@ -572,8 +600,37 @@
   font-size: 0.7rem;
   font-weight: 700;
   color: var(--error, #d93025);
-  background: color-mix(in srgb, var(--error, #d93025) 12%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--error, #d93025) 35%, transparent);
+  background: var(--surface);
+  border: 1.5px solid var(--error, #d93025);
+  border-radius: 100px;
+  padding: 2px 8px;
+  width: fit-content;
+}
+
+/* Turned in per Google, but nothing readable came out of it — distinct from
+   both Flagged (a real, analyzable submission the AI had something to say
+   about) and a non-submitter (no row at all) */
+.student-empty-badge {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--surface);
+  border: 1.5px solid var(--text);
+  border-radius: 100px;
+  padding: 2px 8px;
+  width: fit-content;
+}
+
+/* Named under the classwide report's own Solid Themes — same visual language
+   as Flagged/Empty, just green instead of red/neutral */
+.student-solid-badge {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #1e8449;
+  background: var(--surface);
+  border: 1.5px solid #27ae60;
   border-radius: 100px;
   padding: 2px 8px;
   width: fit-content;
@@ -588,9 +645,9 @@
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--accent);
-  background: var(--accent-bg);
-  border: 1px solid var(--accent-border);
-  border-radius: 8px;
+  background: none;
+  border: 1.5px solid var(--accent);
+  border-radius: 100px;
   padding: 6px 14px;
   cursor: pointer;
   transition: opacity 0.15s;
