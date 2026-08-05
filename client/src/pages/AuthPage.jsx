@@ -59,10 +59,15 @@ function AuthPage({ onLoginSuccess, message }) {
         <ParticleBackground />
 
         <div className="landing-hero-content">
-          <h1 className="landing-hero-title">See what your class actually understood.</h1>
+          <h1 className="landing-hero-title">
+            See what confused
+            <br />
+            your class.
+          </h1>
           <p className="landing-hero-subtitle">
-            Signal connects to Google Classroom, reads every submission your students turn in,
-            and turns them into a clear report of what to reteach — before the next lesson.
+            Signal syncs with Google Classroom, reads each submission your students turn in, and
+            turns them into a class-wide report of confusion themes. So you can re-teach before
+            confusion sets into the next lesson.
           </p>
 
           {serverStatus === 'error' && (
@@ -86,23 +91,19 @@ function AuthPage({ onLoginSuccess, message }) {
         <FeatureCard
           icon={<Icon name="sync" className="feature-icon-svg" />}
           title="Syncs with Classroom"
-          text="Connect your Google account once. Signal pulls in your classes, assignments, and every student submission automatically."
+          text="Connect your Google account once. Signal syncs in your classes, assignments, and each student submission automatically."
         />
         <FeatureCard
-          icon={<Icon name="psychology" className="feature-icon-svg" />}
+          icon={<Icon name="psychology_alt" className="feature-icon-svg" />}
           title="AI confusion reports"
-          text="Every submission in an assignment is analyzed together to surface the misconceptions that showed up across the whole class."
+          text="Every student submission in an assignment is analyzed together to surface the misconceptions shared by the whole class."
         />
-        <FeatureCard
-          icon={<Icon name="check" className="feature-icon-svg" />}
-          title="Built for action"
-          text="Get concrete next steps for your next class — grounded in the rubric and mental model you already provided."
-        />
+        <ActionCard />
       </section>
 
       <Reveal className="landing-demo">
         <h2>See it in action</h2>
-        <p>A quick look at syncing an assignment and building a confusion report.</p>
+        <p>A look at how to build a confusion report.</p>
         <div className="demo-frame">
           {videoAvailable ? (
             <video className="demo-video" controls src="/demo.mp4" />
@@ -181,11 +182,11 @@ function StudentModal({ onClose }) {
         </button>
         <h2 className="modal-title">Coming soon</h2>
         <p className="modal-text">
-          Signal doesn't have student sign-in yet — it's built for teachers right now.
+          Signal doesn't have student sign-in. It's built for teachers for now.
         </p>
         <p className="modal-text">
-          Want to know how you did, or need help with something? Ask your teacher —
-          if they use Signal, they already have that insight into your work.
+          Curious about how you did, or need help with an assignment? Ask your teacher! If
+          they use Signal, they already have that insight into your work.
         </p>
       </div>
     </div>
@@ -198,6 +199,67 @@ function FeatureCard({ icon, title, text }) {
       <span className="feature-icon" aria-hidden="true">{icon}</span>
       <h3 className="feature-title">{title}</h3>
       <p className="feature-text">{text}</p>
+    </div>
+  )
+}
+
+// The "Built for action" feature card — clicking it opens a popup that fans
+// out into two cards showing how the generated action plan serves teachers
+// and students differently.
+function ActionCard() {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <button className="feature-card feature-card--action" type="button" onClick={() => setOpen(true)}>
+        <span className="feature-icon" aria-hidden="true">
+          <Icon name="check" className="feature-icon-svg" />
+        </span>
+        <h3 className="feature-title">Built for action</h3>
+        <p className="feature-text">
+          Get an action plan. For you and your students.
+        </p>
+      </button>
+
+      {open && <ActionModal onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
+function ActionModal({ onClose }) {
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="action-modal" onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close action-modal-close" type="button" aria-label="Close" onClick={onClose}>
+          <Icon name="close" />
+        </button>
+
+        <div className="action-modal-cards">
+          <div className="action-modal-card action-modal-card--left">
+            <h4 className="action-modal-card-title">For teachers</h4>
+            <p className="action-modal-card-text">
+              No guesswork: get an action plan for what to reteach and how, grounded in the
+              mental model you expect from students.
+            </p>
+          </div>
+          <div className="action-modal-card action-modal-card--right">
+            <h4 className="action-modal-card-title">For students</h4>
+            <p className="action-modal-card-text">
+              Each student has agency over their own learning. Their action plan is theirs to
+              act on, not one imposed on them. It's tailored to their own confusion, regardless
+              of whether they submitted the assignment.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
