@@ -6,96 +6,91 @@ from sqlalchemy.orm import Session
 from app.models.user import User
 from app.models.coursework import Coursework
 from app.controllers.google import SUBMITTED_STATES
+from app.controllers.report import FONT_STACK, INK, MUTED, COLOR, _email_shell, _footer_reminder_html
 
 RESEND_API_URL = "https://api.resend.com/emails"
 
 
 # ── HTML helpers ─────────────────────────────────────────────────────────────
 
-# Formats a due date the same way ReportsPage formats report build dates
-# ("Jul 31, 2026") so emails read consistently with the app's own date style
-def _format_due_date(due_date) -> str:
-    return due_date.strftime("%b %-d, %Y")
+def _days_ago(due_date, now) -> str:
+    days = max(0, (now.date() - due_date.date()).days)
+    if days == 0:
+        return "due today"
+    return f"{days} day{'s' if days != 1 else ''} past due"
 
 
-# Assignments whose due date has passed but have no class-wide report yet —
-# a nudge to go build (or, if context is still missing, add context first).
-# Each one renders as a card matching the app's own item-card styling
-# (AssignmentsPage/ReportsPage) — title, submission count, due date — and
-# links straight back into Signal so the nudge is one click from action.
-def _ready_to_build_html(coursework_list, frontend_url) -> str:
+def _assignment_card_html(cw, frontend_url: str, now, *, is_first: bool, is_last: bool) -> str:
+    # Every enrolled student has a row now (see sync_coursework), whether or
+    # not they've submitted — total enrolled is just the row count, and the
+    # "submitted" half must filter to submitted states specifically
+    total_count = len(cw.submissions)
+    submitted_count = sum(1 for s in cw.submissions if s.state in SUBMITTED_STATES)
+    build_url = f"{frontend_url}/?coursework_id={cw.coursework_id}"
+
+    meta_parts = []
+    if cw.course_name:
+        meta_parts.append(cw.course_name)
+    meta_parts.append(f"{submitted_count} of {total_count} submitted")
+    meta_parts.append(_days_ago(cw.due_date, now) if cw.due_date else "no due date")
+    meta_html = "<br>".join(meta_parts)
+
+    top = 0 if is_first else 18
+    bottom = 0 if is_last else 12
+    border = "" if is_last else f"border-bottom:1.5px solid {COLOR['purple']['border']};"
+
+    return f"""
+<tr>
+  <td style="padding:{top}px 0 {bottom}px;{border}font-family:{FONT_STACK};">
+    <p style="margin:0 0 8px;font-size:16px;font-weight:700;color:{INK};mso-line-height-rule:exactly;line-height:22px;">{cw.title}</p>
+    <p style="margin:0;font-size:13px;font-style:italic;color:{MUTED};mso-line-height-rule:exactly;line-height:20px;">{meta_html}</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:12px;border-collapse:separate;">
+      <tr>
+        <td align="center" bgcolor="{COLOR['purple']['text']}" style="background:{COLOR['purple']['text']};border-radius:7px;padding:10px 20px;">
+          <a href="{build_url}" style="display:block;font-family:{FONT_STACK};font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;letter-spacing:0.06em;mso-line-height-rule:exactly;line-height:18px;">BUILD</a>
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>"""
+
+
+def _ready_to_build_ordered(coursework_list):
     # Most recently due first; undated ones (not produced by the query today,
     # but handled here in case that ever changes) sink to the bottom, oldest
     # created first — same tiebreaker AssignmentsPage uses for undated items
     dated = sorted((cw for cw in coursework_list if cw.due_date), key=lambda cw: cw.due_date, reverse=True)
     undated = sorted((cw for cw in coursework_list if not cw.due_date), key=lambda cw: cw.coursework_id)
-    ordered = dated + undated
+    return dated + undated
 
-    cards = ""
-    for cw in ordered:
-        # Every enrolled student has a row now (see sync_coursework), whether or
-        # not they've submitted — total enrolled is just the row count, and the
-        # "submitted" half must filter to submitted states specifically
-        total_count = len(cw.submissions)
-        submitted_count = sum(1 for s in cw.submissions if s.state in SUBMITTED_STATES)
-        cards += f"""
-<a href="{frontend_url}" style="display:block;margin-bottom:8px;background:#fff;
-                                 border:1px solid #cbc9d1;border-radius:8px;text-decoration:none;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-    <tr>
-      <td style="padding:14px 16px;vertical-align:middle;">
-        <div style="font-size:15px;font-weight:600;color:#08060d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-          {cw.title}
-        </div>
-        <div style="font-size:12px;color:#6b6375;margin-top:3px;">
-          {cw.course_name or 'Class'}
-          &middot; {submitted_count}{f' of {total_count}' if total_count else ''} submission{'s' if submitted_count != 1 else ''}
-          &middot; {f'due {_format_due_date(cw.due_date)}' if cw.due_date else 'no due date'}
-        </div>
-      </td>
-      <td width="28" style="padding:14px 16px 14px 0;vertical-align:middle;text-align:right;white-space:nowrap;">
-        <span style="font-size:18px;color:#6b6375;">&rsaquo;</span>
-      </td>
-    </tr>
-  </table>
-</a>"""
+
+def _ready_to_build_body_html(coursework_list, frontend_url: str, now) -> str:
+    # One purple-outlined table holding every assignment, no separate banner
+    # row — each button links straight to that assignment's own build screen
+    ordered = _ready_to_build_ordered(coursework_list)
+    rows = "".join(
+        _assignment_card_html(cw, frontend_url, now, is_first=(i == 0), is_last=(i == len(ordered) - 1))
+        for i, cw in enumerate(ordered)
+    )
+    border_color = COLOR['purple']['border']
     return f"""
-<div style="border:1px solid #e8e8e8;border-radius:10px;overflow:hidden;">
-  <div style="background:#f8f9fa;padding:14px 18px;border-bottom:1px solid #e8e8e8;">
-    <p style="margin:0;font-size:13px;font-weight:700;color:#111;">
-      READY TO BUILD
-    </p>
-  </div>
-  <div style="padding:14px 18px;">
-    {cards}
-  </div>
-</div>"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;margin-top:22px;border-collapse:separate;border-spacing:0;">
+  <tr>
+    <td style="padding:18px 16px;background:#ffffff;font-family:{FONT_STACK};border-left:2px solid {border_color};border-right:2px solid {border_color};border-top:2px solid {border_color};border-bottom:2px solid {border_color};border-radius:10px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;">
+        {rows}
+      </table>
+    </td>
+  </tr>
+</table>"""
 
 
-def _full_email_html(ready_to_build_html: str, frontend_url: str) -> str:
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#f0f0f0;
-             font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-  <div style="max-width:640px;margin:32px auto;padding:0 16px 32px;">
-
-    <!-- Ready to build -->
-    <div style="background:#fff;border:1px solid #e8e8e8;border-radius:10px;padding:24px 28px;">
-      {ready_to_build_html}
-    </div>
-
-    <!-- Footer -->
-    <div style="text-align:center;padding:24px 0 0;font-size:12px;color:#aaa;">
-      <p style="margin:0 0 6px;">signal@marcylab.us</p>
-      <a href="{frontend_url}" style="color:#aaa;text-decoration:underline;">
-        Turn off notifications
-      </a>
-    </div>
-
-  </div>
-</body>
-</html>"""
+def _ready_to_build_email_html(coursework_list, frontend_url: str, now) -> str:
+    titles = [cw.title for cw in coursework_list]
+    title = titles[0] if len(titles) == 1 else "Build a report on these assignments"
+    preheader = ", ".join(titles) + " &mdash; submissions are in"
+    body_html = _ready_to_build_body_html(coursework_list, frontend_url, now)
+    return _email_shell(title, "", body_html, preheader, _footer_reminder_html())
 
 
 # ── Send functions ───────────────────────────────────────────────────────────
@@ -114,8 +109,14 @@ async def send_notifs(user: User, db: Session, window_hours: int) -> bool:
     now = datetime.utcnow()
     cutoff = now - timedelta(hours=window_hours)
 
-    # Assignments whose due date fell within the window but still have no report
-    ready_to_build = (
+    # Assignments whose due date fell within the window and still have no
+    # report — `context` is assembled from 3 real columns as a Python
+    # property (see the Coursework model), not a column itself, so it can't
+    # be filtered in SQL; the context check below happens in Python instead.
+    # build_report rejects one with no mental model, description, or rubric,
+    # so a card promising a report that will just error isn't "ready to
+    # build" at all
+    candidates = (
         db.query(Coursework)
         .filter(
             Coursework.user_id == user.user_id,
@@ -126,17 +127,15 @@ async def send_notifs(user: User, db: Session, window_hours: int) -> bool:
         .filter(~Coursework.report.has())
         .all()
     )
+    ready_to_build = [cw for cw in candidates if cw.context and cw.context.strip()]
 
     if not ready_to_build:
         print(f"[email] Nothing ready to build for user_id={user.user_id} — skipping")
         return False
 
-    subject = "REMINDER: BUILD REPORT"
-
-    html = _full_email_html(
-        ready_to_build_html=_ready_to_build_html(ready_to_build, frontend_url),
-        frontend_url=frontend_url,
-    )
+    n = len(ready_to_build)
+    subject = f"Ready to build: {ready_to_build[0].title}" if n == 1 else f"{n} assignments are ready for a report"
+    html = _ready_to_build_email_html(ready_to_build, frontend_url, now)
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(

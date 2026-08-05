@@ -91,6 +91,21 @@ function App() {
     load()
   }, [user, screen])
 
+  // Deep link from a "ready to build" reminder email — lands straight on that
+  // assignment's Report tab instead of the Courses screen, so the one click
+  // in the email is the one click it takes to get building.
+  useEffect(() => {
+    if (synced.length === 0) return
+    const params = new URLSearchParams(window.location.search)
+    const courseworkId = params.get('coursework_id')
+    if (!courseworkId) return
+    handleViewAssignmentById(Number(courseworkId))
+    params.delete('coursework_id')
+    const newSearch = params.toString()
+    window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [synced])
+
   // Don't render anything until we know the auth state
   if (authLoading) return null
 

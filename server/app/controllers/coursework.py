@@ -28,24 +28,51 @@ def get_all_coursework(user: User, db: Session) -> list:
         .all()
     )
 
+    # Separate, unfiltered count — every enrolled student, submitted or not.
+    # Lets the classwide report's Flagged Students card show "of N students"
+    # without the Detail screen needing to visit the Students tab first.
+    total_counts = dict(
+        db.query(Submission.coursework_id, func.count(Submission.submission_id))
+        .join(Coursework, Coursework.coursework_id == Submission.coursework_id)
+        .filter(Coursework.user_id == user.user_id)
+        .group_by(Submission.coursework_id)
+        .all()
+    )
+
     return [
         {
             "coursework_id": cw.coursework_id,
             "title": cw.title,
-            "context": cw.context,
+            "mental_model": cw.mental_model,
+            "assignment_description": cw.assignment_description,
+            "rubric": cw.rubric,
+            "include_description": cw.include_description,
+            "include_rubric": cw.include_rubric,
             "google_coursework_id": cw.google_coursework_id,
             "google_course_id": cw.google_course_id,  # Lets Reports/Detail navigate without a live Google lookup
             "course_name": cw.course_name or "",
             "due_date": cw.due_date.isoformat() if cw.due_date else None,
             "submission_count": counts.get(cw.coursework_id, 0),
+            "total_students": total_counts.get(cw.coursework_id, 0),
             "has_report": cw.report is not None,  # Lets the Detail screen skip fetching a report that doesn't exist yet
         }
         for cw in coursework
     ]
 
 
-def update_context(coursework_id: int, context: str, user: User, db: Session) -> dict:
-    # Lets a teacher add or edit the rubric/learning-goal context used by the AI report
+def update_context(
+    coursework_id: int,
+    mental_model: str,
+    assignment_description: str,
+    rubric: str,
+    include_description: bool,
+    include_rubric: bool,
+    user: User,
+    db: Session,
+) -> dict:
+    # Lets a teacher add or edit the mental model/reference material used by the AI report.
+    # Each field is its own column — no combined string to reconstruct, so a teacher's own
+    # text can never be mistaken for a section boundary and silently truncated.
     cw = db.query(Coursework).filter(
         Coursework.coursework_id == coursework_id,
         Coursework.user_id == user.user_id,
@@ -54,13 +81,21 @@ def update_context(coursework_id: int, context: str, user: User, db: Session) ->
     if not cw:
         raise HTTPException(status_code=404, detail="Assignment not found")
 
-    cw.context = context
+    cw.mental_model = mental_model
+    cw.assignment_description = assignment_description
+    cw.rubric = rubric
+    cw.include_description = include_description
+    cw.include_rubric = include_rubric
     db.commit()
     db.refresh(cw)
 
     return {
         "coursework_id": cw.coursework_id,
         "title": cw.title,
-        "context": cw.context,
+        "mental_model": cw.mental_model,
+        "assignment_description": cw.assignment_description,
+        "rubric": cw.rubric,
+        "include_description": cw.include_description,
+        "include_rubric": cw.include_rubric,
         "google_coursework_id": cw.google_coursework_id,
     }

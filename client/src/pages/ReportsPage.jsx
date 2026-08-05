@@ -182,17 +182,16 @@ function ReportsPage({ onViewAssignment, onGoToClasses }) {
                         <div className="item-info">
                           <span className="item-name">{report.title}</span>
                           <span className="item-meta">
-                            {new Date(report.created_at).toLocaleDateString('en-US', {
-                              month: 'short', day: 'numeric', year: 'numeric',
-                            })}
-                            {' · '}
-                            {report.total_submissions} student{report.total_submissions !== 1 ? 's' : ''}
+                            <span className="reports-item-date">
+                              {new Date(report.created_at).toLocaleDateString('en-US', {
+                                month: 'short', day: 'numeric', year: 'numeric',
+                              })}
+                            </span>
                             {report.flagged_count > 0 && (
                               <span className="reports-flagged-badge">{report.flagged_count} flagged</span>
                             )}
                           </span>
                         </div>
-                        <span className="chevron">›</span>
                       </button>
                       <button
                         type="button"

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { getReport, buildReport, emailReport, syncCoursework, updateCourseworkContext, getGCRubric, getGCDescription, getSubmissions, buildStudentReport, emailStudentReport, draftStudentEmail, sendReportToStudent } from '../lib/api'
+import { getReport, buildReport, emailReport, syncCoursework, updateCourseworkContext, getGCRubric, getGCDescription, getSubmissions, buildStudentReport, emailStudentReport, draftStudentEmail, sendReportToStudent, buildNudge, sendNudge } from '../lib/api'
 import Icon from '../components/Icon'
-import ReportBody, { StudentReportSummary } from '../components/ReportBody'
-import { parseFlaggedStudents } from '../lib/reportParsing'
+import ReportBody, { StudentReportSummary, NudgeSummary } from '../components/ReportBody'
+import { parseFlaggedStudents, parseSolidStudents } from '../lib/reportParsing'
 import './Screens.css'
 import './AssignmentDetailPage.css'
 
@@ -12,18 +12,6 @@ import './AssignmentDetailPage.css'
 const lastSyncedAt = new Map()
 const SYNC_DEBOUNCE_MS = 10_000
 
-// Pulls one labeled section (Mental Model / Assignment Description / Rubric)
-// back out of a previously-saved combined context string, so reopening an
-// assignment restores each field to where it actually belongs instead of
-// resetting to blank or dumping everything into the wrong box.
-function extractContextSection(savedContext, label) {
-  if (!savedContext) return ''
-  const pattern = new RegExp(
-    `${label}:\\n([\\s\\S]*?)(?:\\n\\n(?:Mental Model|Assignment Description|Rubric):|$)`
-  )
-  const match = savedContext.match(pattern)
-  return match ? match[1].trim() : ''
-}
 
 // Third screen — shown when a teacher clicks into a specific assignment.
 // Lets the teacher review/edit the mental model and supporting materials,
@@ -37,24 +25,24 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
   // Arriving from the Reports screen opens straight to Report, since that's
   // the entire point of that click.
   const [activeTab, setActiveTab] = useState(initialTab || 'context')
-  // The teacher's own words — restored from the saved context, never touched by syncing
-  const [mentalModelText, setMentalModelText] = useState(
-    () => extractContextSection(syncedRecord?.context, 'Mental Model')
-  )
-  // Restored from the saved context like Mental Model/Rubric, so a teacher's edits
+  // The teacher's own words — read directly from its own column, never touched
+  // by syncing. No parsing: each field is stored separately on the backend now,
+  // so a teacher's own text can never be mistaken for a section boundary and
+  // silently truncated (the bug that used to make a saved Mental Model vanish).
+  const [mentalModelText, setMentalModelText] = useState(() => syncedRecord?.mental_model || '')
+  // Restored from its own column like Mental Model/Rubric, so a teacher's edits
   // survive a revisit — falls back to the live Classroom description only the first
   // time, before anything has ever been saved.
   const [descriptionText, setDescriptionText] = useState(
-    () => extractContextSection(syncedRecord?.context, 'Assignment Description') || assignment.description || ''
+    () => syncedRecord?.assignment_description || assignment.description || ''
   )
-  const [rubricText, setRubricText] = useState(
-    () => extractContextSection(syncedRecord?.context, 'Rubric')
-  )
+  const [rubricText, setRubricText] = useState(() => syncedRecord?.rubric || '')
   // Each reference material can be left out of what's actually sent to the AI
   // while still staying visible/editable — e.g. excluding the rubric if a
   // teacher doesn't want its grading-criteria framing to influence the report.
-  const [includeDescription, setIncludeDescription] = useState(true)
-  const [includeRubric, setIncludeRubric] = useState(true)
+  // Restored from the saved record so the choice persists across visits.
+  const [includeDescription, setIncludeDescription] = useState(() => syncedRecord?.include_description ?? true)
+  const [includeRubric, setIncludeRubric] = useState(() => syncedRecord?.include_rubric ?? true)
   const [syncingSubmissions, setSyncingSubmissions] = useState(false)
   const [syncingDescription, setSyncingDescription] = useState(false)
   const [syncingRubric, setSyncingRubric] = useState(false)
@@ -102,11 +90,15 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
   const [choosingEmailRecipient, setChoosingEmailRecipient] = useState(false)
   // Whether "Email to student" has opened the review/edit-before-send view
   const [editingStudentEmail, setEditingStudentEmail] = useState(false)
-  // { submissionSummary, understands, misconceptions, submissionQuality, nextStep } | null
+  // { submissionSummary, understands, misconceptions, nextStep } | null
   const [emailDraft, setEmailDraft] = useState(null)
   // True while the second-person AI rewrite is being drafted, between clicking
   // "Email to student" and the review view actually opening
   const [draftingStudentEmail, setDraftingStudentEmail] = useState(false)
+  // Same review/edit-before-send pattern as editingStudentEmail, but for a
+  // no-submission student's single "Start Here" nudge instead of a 5-section report
+  const [editingNudge, setEditingNudge] = useState(false)
+  const [nudgeDraft, setNudgeDraft] = useState('')
   const emailDropdownRef = useRef(null)
 
   // Closes the email dropdown on Escape or on any click outside it
@@ -161,9 +153,10 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
     getSubmissions(courseworkId).then(setSubmissions).catch(() => {})
   }, [courseworkId, reportMode])
 
-  // Flagged students come straight from the classwide report's own "Flagged
-  // Students" section — no student report needs to exist yet to know who's flagged
+  // Flagged/solid students come straight from the classwide report's own
+  // sections — no student report needs to exist yet to know who's who
   const flaggedStudents = useMemo(() => parseFlaggedStudents(report?.content), [report])
+  const solidStudents = useMemo(() => parseSolidStudents(report?.content), [report])
 
   // _displayName is what flagged-name matching below compares against, since
   // that's literally what the AI was told to call this student. _niceName is
@@ -197,27 +190,44 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
   const allStudents = useMemo(() => {
     const flaggedNameSet = new Set(flaggedStudents.map((f) => f.name.trim().toLowerCase()))
     const isFlagged = (name) => flaggedNameSet.has(name.trim().toLowerCase())
+    const solidNameSet = new Set(solidStudents.map((n) => n.trim().toLowerCase()))
+    const isSolid = (name) => solidNameSet.has(name.trim().toLowerCase())
 
     return submissionsWithDisplayNames
       .map((s) => ({
         key: `submission-${s.submission_id}`,
         name: s._niceName,
-        // What flagged-name matching actually compares against — kept separate
-        // from the (possibly nicer) displayed name, see the comment above
+        // What flagged/solid-name matching actually compares against — kept
+        // separate from the (possibly nicer) displayed name, see the comment above
         matchName: s._displayName,
         hasSubmitted: s.has_submitted,
         // A non-submitted or empty submission is always excluded from what the AI
-        // sees (report.py), so it can never actually appear in the flagged list —
+        // sees (report.py), so it can never actually appear in either list —
         // this just makes that explicit instead of relying on that by construction
         flagged: s.has_submitted && !s._isEmpty && isFlagged(s._displayName),
+        solid: s.has_submitted && !s._isEmpty && isSolid(s._displayName),
         isEmpty: s._isEmpty,
         submission: s,
       }))
-      .sort((a, b) => {
-        if (a.flagged !== b.flagged) return a.flagged ? -1 : 1
-        return a.name.localeCompare(b.name)
-      })
-  }, [submissionsWithDisplayNames, flaggedStudents])
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [submissionsWithDisplayNames, flaggedStudents, solidStudents])
+
+  // Categorized view for the default (non-search) Student tab — flagged
+  // students surfaced first since they need the most attention, then
+  // empty/no-submission (invisible to the AI report entirely, so this is the
+  // only place they're ever called out), then solid understanding, with
+  // everyone else in the plain list below. Mutually exclusive by construction:
+  // flagged/solid both require a real, non-empty submission (see allStudents),
+  // so a student can only ever land in one of the first three groups.
+  const flaggedGroup = useMemo(() => allStudents.filter((s) => s.flagged), [allStudents])
+  const noSubmissionGroup = useMemo(
+    () => allStudents.filter((s) => !s.hasSubmitted || s.isEmpty), [allStudents]
+  )
+  const solidGroup = useMemo(() => allStudents.filter((s) => s.solid), [allStudents])
+  const restGroup = useMemo(
+    () => allStudents.filter((s) => !s.flagged && !s.solid && s.hasSubmitted && !s.isEmpty),
+    [allStudents]
+  )
 
   const filteredStudents = useMemo(() => {
     const query = studentSearch.trim().toLowerCase()
@@ -247,39 +257,28 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
     setEditingStudentEmail(false)
     setEmailDraft(null)
     setDraftingStudentEmail(false)
+    setEditingNudge(false)
+    setNudgeDraft('')
     setModalActionError(null)
     setOpenReportId(submissionId)
   }
 
-  // Mental model, description, and rubric are edited separately but combined
-  // into one labeled string for the AI — the report only reads a single context
-  // field, but labeling each piece lets the model tell the teacher's own goal
-  // apart from reference material instead of reading one undifferentiated blob.
-  function combinedContext() {
-    return [
-      mentalModelText && `Mental Model:\n${mentalModelText}`,
-      includeDescription && descriptionText && `Assignment Description:\n${descriptionText}`,
-      includeRubric && rubricText && `Rubric:\n${rubricText}`,
-    ].filter(Boolean).join('\n\n')
-  }
-
   // Shared by the automatic sync-on-open effect below and the manual Refresh
   // button. Deliberately does NOT touch the description — see
-  // handleSyncDescription for that, same pattern as Sync Rubric.
+  // handleSyncDescription for that, same pattern as Sync Rubric. Doesn't pass
+  // or touch context at all — sync only ever creates the row or refreshes
+  // submissions; editing context always goes through Save Context below.
   async function performSync() {
     setSyncingSubmissions(true)
     setActionError(null)
     try {
-      const result = await syncCoursework(
-        assignment.google_coursework_id, assignment.course_id, combinedContext(), assignment.course_name
-      )
+      const result = await syncCoursework(assignment.google_coursework_id, assignment.course_id, assignment.course_name)
       if (!record) setLoadingReport(true) // first sync — the effect above is about to fetch the (nonexistent) report
       setRecord((prev) => ({
         ...prev,
         coursework_id: result.coursework_id,
         google_coursework_id: assignment.google_coursework_id,
         title: result.title,
-        context: prev ? prev.context : combinedContext(),
         submission_count: result.total_submissions,
       }))
       // The Students tab's own submissions list only refetches when reportMode
@@ -312,8 +311,8 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
       await performSync()
     }
     autoSync()
-    // Deliberately only keyed on which assignment this is — combinedContext()/
-    // reportMode read the latest value when this fires, they shouldn't re-trigger a sync
+    // Deliberately only keyed on which assignment this is — reportMode reads
+    // the latest value when this fires, it shouldn't re-trigger a sync
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assignment.google_coursework_id])
 
@@ -368,8 +367,21 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
     setSaveError(null)
     setSaveSuccess(false)
     try {
-      const updated = await updateCourseworkContext(record.coursework_id, combinedContext())
-      setRecord((prev) => ({ ...prev, context: updated.context }))
+      const updated = await updateCourseworkContext(record.coursework_id, {
+        mentalModel: mentalModelText,
+        assignmentDescription: descriptionText,
+        rubric: rubricText,
+        includeDescription,
+        includeRubric,
+      })
+      setRecord((prev) => ({
+        ...prev,
+        mental_model: updated.mental_model,
+        assignment_description: updated.assignment_description,
+        rubric: updated.rubric,
+        include_description: updated.include_description,
+        include_rubric: updated.include_rubric,
+      }))
       onDataChange()
       setSaveSuccess(true)
     } catch (err) {
@@ -442,6 +454,36 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
     }
   }
 
+  // Same shape as handleBuildSubmissionReport, but for a student with no
+  // submission — grounded only in the assignment's context, since there's
+  // nothing to analyze from a submission that doesn't exist
+  async function handleBuildNudge(submissionId) {
+    setBuildingStudentId(submissionId)
+    try {
+      const result = await buildNudge(record.coursework_id, submissionId)
+      setSubmissions((prev) =>
+        prev.map((s) =>
+          s.submission_id === submissionId
+            ? { ...s, student_report: result.student_report }
+            : s
+        )
+      )
+      return { success: true }
+    } catch (err) {
+      return { success: false, message: err.message }
+    } finally {
+      setBuildingStudentId(null)
+    }
+  }
+
+  async function handleRefreshNudge(submissionId) {
+    setModalActionError(null)
+    const result = await handleBuildNudge(submissionId)
+    if (!result.success) {
+      setModalActionError(result.message || 'Failed to refresh this nudge. Try again.')
+    }
+  }
+
   async function handleEmailStudent(submissionId) {
     setChoosingEmailRecipient(false)
     setEmailingStudent(true)
@@ -472,7 +514,6 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
         submissionSummary: draft.submission_summary,
         understands: draft.understands,
         misconceptions: draft.misconceptions,
-        submissionQuality: draft.submission_quality,
         nextStep: draft.next_step,
       })
       setEditingStudentEmail(true)
@@ -502,6 +543,28 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
     }
   }
 
+  function handleOpenNudgeEdit(studentReport) {
+    setChoosingEmailRecipient(false)
+    setStudentEmailError(null)
+    setNudgeDraft((studentReport || '').replace(/^[-*]\s+/, '').trim())
+    setEditingNudge(true)
+  }
+
+  async function handleSendNudge(submissionId) {
+    setSendingToStudent(true)
+    setStudentEmailError(null)
+    setStudentEmailSuccess(null)
+    try {
+      await sendNudge(record.coursework_id, submissionId, nudgeDraft)
+      setStudentEmailSuccess('student')
+      setEditingNudge(false)
+    } catch (err) {
+      setStudentEmailError(err.message)
+    } finally {
+      setSendingToStudent(false)
+    }
+  }
+
   // Opening an existing report never costs anything, so this is safe to fire
   // straight from a click with no confirmation step
   function handleViewStudentReport(student) {
@@ -510,31 +573,21 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
 
   // Building one does cost a Groq call, so this is only ever wired to its own
   // explicit "Build" button — never triggered just by clicking/selecting a
-  // student — so browsing the list never silently spends anything. A
-  // non-submitter has nothing to build from, so this shows a message instead.
+  // student — so browsing the list never silently spends anything. A student
+  // with no submission gets a "how to get started" nudge instead of a
+  // diagnostic report, since there's nothing to analyze.
   async function handleBuildStudentReport(student) {
     setStudentActionError(null)
-    if (!student.hasSubmitted) {
-      setStudentActionError({
-        key: student.key,
-        message: `${student.name} hasn't turned this in.`,
-      })
-      return
-    }
-    if (student.isEmpty) {
-      setStudentActionError({
-        key: student.key,
-        message: `${student.name}'s submission is empty.`,
-      })
-      return
-    }
-    const result = await handleBuildSubmissionReport(student.submission.submission_id)
+    const isNudgeType = !student.hasSubmitted || student.isEmpty
+    const result = isNudgeType
+      ? await handleBuildNudge(student.submission.submission_id)
+      : await handleBuildSubmissionReport(student.submission.submission_id)
     if (result.success) {
       setStudentReportModal(student.submission.submission_id)
     } else {
       setStudentActionError({
         key: student.key,
-        message: result.message || `Failed to build a report for ${student.name}. Try again.`,
+        message: result.message || `Failed to build ${isNudgeType ? 'a nudge' : 'a report'} for ${student.name}. Try again.`,
       })
     }
   }
@@ -542,8 +595,83 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
   // A report with nothing to compare submissions against is nearly always
   // shallow and generic — Build/Refresh are disabled until there's at least
   // a mental model, description, or rubric to work with
-  const hasContext = combinedContext().trim().length > 0
+  const hasContext = Boolean(
+    mentalModelText.trim()
+    || (includeDescription && descriptionText.trim())
+    || (includeRubric && rubricText.trim())
+  )
   const hasMentalModel = mentalModelText.trim().length > 0
+
+  // Shared row markup for both the categorized default view and the flat
+  // search-mode list below, so the two never drift out of sync with each
+  // other. showBadges is false in the grouped/category views — a student's
+  // box (Flagged/Empty/Solid) already says what they are, so the badge would
+  // just repeat it; only the flat search list (which mixes categories
+  // together) actually needs the badge to convey that.
+  function renderStudentRow(student, showBadges = false) {
+    return student.submission.student_report ? (
+      <button
+        key={student.key}
+        type="button"
+        className="student-row student-row--clickable"
+        onClick={() => handleViewStudentReport(student)}
+      >
+        <div className="student-card-info">
+          <span className="student-card-name">{student.name}</span>
+          {showBadges && student.flagged && <span className="student-flagged-badge">Flagged</span>}
+          {showBadges && student.solid && <span className="student-solid-badge">Solid</span>}
+          {showBadges && student.isEmpty && <span className="student-empty-badge">Empty submission</span>}
+          {showBadges && !student.hasSubmitted && <span className="student-empty-badge">Unsubmitted</span>}
+        </div>
+        <Icon name="chevron_right" className="student-card-chevron" />
+      </button>
+    ) : (
+      <div key={student.key} className="student-row student-row--column">
+        <div className="student-row-main">
+          <div className="student-card-info">
+            <span className="student-card-name">{student.name}</span>
+            {showBadges && student.flagged && <span className="student-flagged-badge">Flagged</span>}
+            {showBadges && student.solid && <span className="student-solid-badge">Solid</span>}
+            {showBadges && student.isEmpty && <span className="student-empty-badge">Empty submission</span>}
+            {showBadges && !student.hasSubmitted && <span className="student-empty-badge">Unsubmitted</span>}
+          </div>
+          {buildingStudentId === student.submission?.submission_id ? (
+            <span className="student-card-building">…</span>
+          ) : (
+            <button
+              type="button"
+              className="student-build-btn"
+              onClick={() => handleBuildStudentReport(student)}
+            >
+              Build
+            </button>
+          )}
+        </div>
+        {/* Shown right on the row that triggered it, not a banner elsewhere
+            on the page — otherwise it can render off-screen above a
+            scrolled list and look like nothing happened at all */}
+        {studentActionError?.key === student.key && (
+          <p className="report-error student-row-error">{studentActionError.message}</p>
+        )}
+      </div>
+    )
+  }
+
+  // One outlined box per category, skipped entirely when empty — never an
+  // empty box with nothing in it. Only shown in the default (non-search) view;
+  // searching collapses back to a flat list so a match isn't hidden in a
+  // category the teacher isn't currently looking at.
+  function renderStudentGroup(students, label, colorClass) {
+    if (students.length === 0) return null
+    return (
+      <div className={`student-group ${colorClass}`}>
+        <h3 className="student-group-title">{label} ({students.length})</h3>
+        <div className="student-card-grid">
+          {students.map((s) => renderStudentRow(s, false))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="screen">
@@ -791,7 +919,7 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
                     </div>
                     {emailSuccess && <p className="save-success">Sent to your email</p>}
                     {emailError && <p className="report-error">{emailError}</p>}
-                    <ReportBody content={report.content} mode="classwide" />
+                    <ReportBody content={report.content} mode="classwide" totalStudents={record?.total_students} />
                   </div>
                 )}
               </>
@@ -800,14 +928,16 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
             {/* ── STUDENTS ── */}
             {reportMode === 'students' && (
               <div className="student-list">
-                <input
-                  type="text"
-                  className="search-input"
-                  placeholder="Search students…"
-                  value={studentSearch}
-                  onChange={(e) => setStudentSearch(e.target.value)}
-                  aria-label="Search students"
-                />
+                <div className="coursework-controls">
+                  <input
+                    type="text"
+                    className="search-input"
+                    placeholder="Search students…"
+                    value={studentSearch}
+                    onChange={(e) => setStudentSearch(e.target.value)}
+                    aria-label="Search students"
+                  />
+                </div>
 
                 {allStudents.length === 0 && (
                   <p className="report-status">No students found for this assignment yet.</p>
@@ -817,52 +947,28 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
                   <p className="report-status">No students match your search.</p>
                 )}
 
-                <div className="student-card-grid">
-                  {filteredStudents.map((student) =>
-                    student.hasSubmitted && student.submission.student_report ? (
-                      <button
-                        key={student.key}
-                        type="button"
-                        className="student-row student-row--clickable"
-                        onClick={() => handleViewStudentReport(student)}
-                      >
-                        <div className="student-card-info">
-                          <span className="student-card-name">{student.name}</span>
-                          {student.flagged && <span className="student-flagged-badge">Flagged</span>}
-                        </div>
-                        <Icon name="chevron_right" className="student-card-chevron" />
-                      </button>
-                    ) : (
-                      <div key={student.key} className="student-row student-row--column">
-                        <div className="student-row-main">
-                          <div className="student-card-info">
-                            <span className="student-card-name">{student.name}</span>
-                            {student.flagged && <span className="student-flagged-badge">Flagged</span>}
-                            {student.isEmpty && <span className="student-empty-badge">Empty submission</span>}
-                            {!student.hasSubmitted && <span className="student-empty-badge">Unsubmitted</span>}
-                          </div>
-                          {buildingStudentId === student.submission?.submission_id ? (
-                            <span className="student-card-building">…</span>
-                          ) : (
-                            <button
-                              type="button"
-                              className="student-build-btn"
-                              onClick={() => handleBuildStudentReport(student)}
-                            >
-                              Build
-                            </button>
-                          )}
-                        </div>
-                        {/* Shown right on the row that triggered it, not a banner elsewhere
-                            on the page — otherwise it can render off-screen above a
-                            scrolled list and look like nothing happened at all */}
-                        {studentActionError?.key === student.key && (
-                          <p className="report-error student-row-error">{studentActionError.message}</p>
-                        )}
+                {studentSearch.trim() ? (
+                  // Searching collapses to a flat list — a match shouldn't be
+                  // hidden inside a category box the teacher isn't looking at.
+                  // Badges show here since categories are mixed together with
+                  // nothing else distinguishing them.
+                  filteredStudents.length > 0 && (
+                    <div className="student-card-grid">
+                      {filteredStudents.map((s) => renderStudentRow(s, true))}
+                    </div>
+                  )
+                ) : (
+                  <>
+                    {renderStudentGroup(flaggedGroup, 'Flagged', 'student-group--red')}
+                    {renderStudentGroup(noSubmissionGroup, 'Empty / No submission', 'student-group--yellow')}
+                    {renderStudentGroup(solidGroup, 'Solid grasp', 'student-group--green')}
+                    {restGroup.length > 0 && (
+                      <div className="student-card-grid">
+                        {restGroup.map((s) => renderStudentRow(s, false))}
                       </div>
-                    )
-                  )}
-                </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </section>
@@ -873,6 +979,9 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
           const sub = submissions.find((s) => s.submission_id === openReportId)
           if (!sub || !sub.student_report) return null
           const displayName = sub.student_name || `Submission #${sub.submission_id}`
+          // Whether this student has a "how to get started" nudge instead of a
+          // real diagnostic report — same test as the row list above
+          const isNudgeType = !sub.has_submitted || !sub.content
           return (
             <div className="modal-backdrop" onClick={() => setStudentReportModal(null)}>
               <div
@@ -894,47 +1003,63 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
                   <div className="report-actions">
                     <button
                       className="secondary-btn"
-                      onClick={() => handleRefreshOpenReport(sub.submission_id)}
+                      onClick={() => (isNudgeType ? handleRefreshNudge(sub.submission_id) : handleRefreshOpenReport(sub.submission_id))}
                       disabled={buildingStudentId === sub.submission_id}
                     >
-                      {buildingStudentId === sub.submission_id ? 'Refreshing ..' : 'Refresh Report'}
+                      {buildingStudentId === sub.submission_id
+                        ? 'Refreshing ..'
+                        : (isNudgeType ? 'Refresh Nudge' : 'Refresh Report')}
                     </button>
-                    <div className="email-dropdown-wrapper" ref={emailDropdownRef}>
+                    {isNudgeType ? (
+                      // No submission to email a copy of to yourself — this
+                      // nudge only ever makes sense going to the student, so
+                      // there's nothing to choose and no dropdown needed
                       <button
                         type="button"
                         className="secondary-btn"
-                        onClick={() => setChoosingEmailRecipient((v) => !v)}
-                        disabled={emailingStudent || sendingToStudent || draftingStudentEmail}
+                        onClick={() => handleOpenNudgeEdit(sub.student_report)}
+                        disabled={sendingToStudent}
                       >
-                        {draftingStudentEmail
-                          ? 'Drafting ..'
-                          : emailingStudent || sendingToStudent
-                            ? 'Sending ..'
-                            : 'Email Report'}
-                        <Icon name={choosingEmailRecipient ? 'expand_less' : 'expand_more'} />
+                        {sendingToStudent ? 'Sending ..' : 'Email to Student'}
                       </button>
-                      {choosingEmailRecipient && (
-                        <div className="email-dropdown-menu">
-                          <button
-                            type="button"
-                            className="email-dropdown-item"
-                            onClick={() => handleEmailStudent(sub.submission_id)}
-                          >
-                            Email to me
-                          </button>
-                          <button
-                            type="button"
-                            className="email-dropdown-item"
-                            onClick={() => handleOpenStudentEmailEdit(sub.submission_id)}
-                          >
-                            Email to student
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                    ) : (
+                      <div className="email-dropdown-wrapper" ref={emailDropdownRef}>
+                        <button
+                          type="button"
+                          className="secondary-btn"
+                          onClick={() => setChoosingEmailRecipient((v) => !v)}
+                          disabled={emailingStudent || sendingToStudent || draftingStudentEmail}
+                        >
+                          {draftingStudentEmail
+                            ? 'Drafting ..'
+                            : emailingStudent || sendingToStudent
+                              ? 'Sending ..'
+                              : 'Email Report'}
+                          <Icon name={choosingEmailRecipient ? 'expand_less' : 'expand_more'} />
+                        </button>
+                        {choosingEmailRecipient && (
+                          <div className="email-dropdown-menu">
+                            <button
+                              type="button"
+                              className="email-dropdown-item"
+                              onClick={() => handleEmailStudent(sub.submission_id)}
+                            >
+                              Email to me
+                            </button>
+                            <button
+                              type="button"
+                              className="email-dropdown-item"
+                              onClick={() => handleOpenStudentEmailEdit(sub.submission_id)}
+                            >
+                              Email to student
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
-                {editingStudentEmail && (
+                {(editingStudentEmail || editingNudge) && (
                   <p className="next-step-edit-pointer">
                     <Icon name="arrow_downward" />
                     Edit the message below before sending.
@@ -946,17 +1071,30 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
                 {modalActionError && <p className="report-error">{modalActionError}</p>}
 
                 <div className="student-report-body">
-                  <StudentReportSummary
-                    content={sub.student_report}
-                    submissionContent={sub.content}
-                    studentName={displayName}
-                    editingStudentEmail={editingStudentEmail}
-                    emailDraft={emailDraft}
-                    onEmailDraftChange={handleEmailDraftChange}
-                    onSendToStudent={() => handleSendToStudent(sub.submission_id)}
-                    onCancelEdit={() => setEditingStudentEmail(false)}
-                    sendingToStudent={sendingToStudent}
-                  />
+                  {isNudgeType ? (
+                    <NudgeSummary
+                      content={sub.student_report}
+                      studentName={displayName}
+                      editingNudge={editingNudge}
+                      nudgeDraft={nudgeDraft}
+                      onNudgeDraftChange={setNudgeDraft}
+                      onSendNudge={() => handleSendNudge(sub.submission_id)}
+                      onCancelEdit={() => setEditingNudge(false)}
+                      sendingNudge={sendingToStudent}
+                    />
+                  ) : (
+                    <StudentReportSummary
+                      content={sub.student_report}
+                      submissionContent={sub.content}
+                      studentName={displayName}
+                      editingStudentEmail={editingStudentEmail}
+                      emailDraft={emailDraft}
+                      onEmailDraftChange={handleEmailDraftChange}
+                      onSendToStudent={() => handleSendToStudent(sub.submission_id)}
+                      onCancelEdit={() => setEditingStudentEmail(false)}
+                      sendingToStudent={sendingToStudent}
+                    />
+                  )}
                 </div>
               </div>
             </div>

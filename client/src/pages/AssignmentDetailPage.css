@@ -467,6 +467,116 @@
   gap: 12px;
 }
 
+/* Category box for the default (non-search) Student tab view — outlined only,
+   no solid fill, same "outline carries the meaning" language as the report's
+   own sections. Skipped entirely when a category is empty, so this never
+   shows as an empty box with nothing in it. */
+.student-group {
+  border: 2px solid var(--group-color);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.student-group-title {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--group-color);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.student-group--red { --group-color: #d93025; }
+.student-group--yellow { --group-color: #f59e0b; }
+.student-group--green { --group-color: #27ae60; }
+
+/* Small custom trigger+menu, not a native <select> — a select's closed box
+   always sizes to its widest *option* ("No submission"), never to whichever
+   one is actually selected, so "All" would otherwise sit in a box padded out
+   with trailing whitespace no matter how the CSS is tuned. A plain button
+   just hugs its own label like any other button would. */
+.student-filter-dropdown {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.student-filter-trigger {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* Same vertical padding, border, and font-size as .search-input — that
+     trio is what actually determines rendered height, so matching them
+     exactly guarantees the two line up without needing a hardcoded height. */
+  padding: 8px 8px 8px 10px;
+  font: inherit;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  color: var(--text-h);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.student-filter-trigger:hover,
+.student-filter-trigger:focus-visible {
+  border-color: var(--accent-border);
+}
+
+.student-filter-trigger:focus-visible {
+  outline: none;
+}
+
+.student-filter-caret {
+  font-size: 1.1rem;
+  color: var(--text);
+}
+
+.student-filter-menu {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 100%;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.student-filter-option {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--text-h);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.student-filter-option:hover,
+.student-filter-option:focus-visible {
+  background: var(--accent-bg);
+}
+
+.student-filter-option:focus-visible {
+  outline: none;
+}
+
+.student-filter-option.active {
+  font-weight: 600;
+  color: var(--accent);
+}
+
 @media (max-width: 600px) {
   .student-card-grid {
     grid-template-columns: 1fr;
@@ -576,8 +686,8 @@
   font-size: 0.7rem;
   font-weight: 700;
   color: var(--error, #d93025);
-  background: color-mix(in srgb, var(--error, #d93025) 12%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--error, #d93025) 35%, transparent);
+  background: var(--surface);
+  border: 1.5px solid var(--error, #d93025);
   border-radius: 100px;
   padding: 2px 8px;
   width: fit-content;
@@ -591,8 +701,22 @@
   font-size: 0.7rem;
   font-weight: 700;
   color: var(--text);
-  background: color-mix(in srgb, var(--text) 12%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--text) 35%, transparent);
+  background: var(--surface);
+  border: 1.5px solid var(--text);
+  border-radius: 100px;
+  padding: 2px 8px;
+  width: fit-content;
+}
+
+/* Named under the classwide report's own Solid Themes — same visual language
+   as Flagged/Empty, just green instead of red/neutral */
+.student-solid-badge {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #1e8449;
+  background: var(--surface);
+  border: 1.5px solid #27ae60;
   border-radius: 100px;
   padding: 2px 8px;
   width: fit-content;
@@ -607,9 +731,9 @@
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--accent);
-  background: var(--accent-bg);
-  border: 1px solid var(--accent-border);
-  border-radius: 8px;
+  background: none;
+  border: 1.5px solid var(--accent);
+  border-radius: 100px;
   padding: 6px 14px;
   cursor: pointer;
   transition: opacity 0.15s;

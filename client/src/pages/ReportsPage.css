@@ -19,6 +19,11 @@
   cursor: pointer;
 }
 
+/* Report build date — italic, de-emphasized next to the flagged badge */
+.reports-item-date {
+  font-style: italic;
+}
+
 /* Flagged count badge in the card subtitle */
 .reports-flagged-badge {
   display: inline-flex;
@@ -27,8 +32,8 @@
   font-size: 0.72rem;
   font-weight: 600;
   color: #c0392b;
-  background: #fff0f0;
-  border: 1px solid #fcc;
+  background: var(--surface);
+  border: 1.5px solid #c0392b;
   border-radius: 100px;
   padding: 1px 7px;
   vertical-align: middle;
@@ -44,17 +49,18 @@
   height: 32px;
   flex-shrink: 0;
   margin-left: 8px;
-  background: transparent;
-  border: none;
+  background: none;
+  border: 1.5px solid var(--border-strong);
   border-radius: 50%;
   color: var(--text);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: border-color 0.15s, color 0.15s;
 }
 
 .reports-delete-btn:hover,
 .reports-delete-btn:focus-visible {
-  background: #fff0f0;
+  background: none;
+  border-color: var(--error);
   color: var(--error);
 }
 

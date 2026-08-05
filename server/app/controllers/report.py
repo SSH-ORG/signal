@@ -1,5 +1,6 @@
 import os
 import re
+import random
 import httpx
 import groq
 from groq import Groq
@@ -498,8 +499,16 @@ async def email_report(coursework_id: int, user: User, db: Session) -> dict:
         raise HTTPException(status_code=500, detail="Email is not configured on this server")
 
     course_name = (coursework.course_name or "").strip()
-    subject = f"Classwide Report: {course_name} – {coursework.title}" if course_name else f"Classwide Report: {coursework.title}"
-    html_body = _classwide_email_html(coursework.title, coursework.report.content, subtitle=course_name or None)
+    subject = f"{course_name} : {coursework.title}" if course_name else coursework.title
+    # Every enrolled student has a row now (see sync_coursework); "no submission"
+    # covers both never-submitted and submitted-but-empty — see report.py's
+    # earlier note on why the class-wide AI report never sees either group
+    total_students = len(coursework.submissions)
+    no_submission_count = sum(
+        1 for s in coursework.submissions
+        if s.state not in SUBMITTED_STATES or not (s.content and s.content.strip())
+    )
+    html_body = _classwide_email_html(coursework.title, course_name, coursework.report.content, total_students, no_submission_count)
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -556,13 +565,8 @@ async def email_student_report(coursework_id: int, submission_id: int, user: Use
 
     student_label = submission.student_name or f"Student {submission.submission_id}"
     course_name = (coursework.course_name or "").strip()
-    subject = (
-        f"{student_label} Report: {course_name} – {coursework.title}"
-        if course_name else f"{student_label} Report: {coursework.title}"
-    )
-    html_body = _student_email_html(
-        f"{student_label} — {coursework.title}", submission.student_report, subtitle=course_name or None
-    )
+    subject = f"{student_label} : {coursework.title}"
+    html_body = _student_email_html(student_label, course_name, coursework.title, submission.student_report)
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -635,35 +639,110 @@ def draft_student_email(coursework_id: int, submission_id: int, user: User, db: 
         raise HTTPException(status_code=400, detail="No report built yet for this student")
 
     student_label = submission.student_name or f"Student {submission.submission_id}"
+    context_str = coursework.context
 
+    # Submission Quality is deliberately not part of this rewrite — that's
+    # teacher-facing information about whether there was enough to evaluate at
+    # all, and the student-facing email never shows it (see
+    # _student_suggestions_body_html), so drafting/editing it here would be
+    # wasted effort and a dead-looking field with no effect on what's sent.
+    #
+    # Context is included here (unlike a normal rewrite) specifically so Next
+    # Step can be grounded in something real when the student didn't attempt
+    # the assignment — see the instruction below for why that case needs more
+    # than a straight second-person translation of the original.
     prompt = f"""You are rewriting a teacher's diagnostic report about one student so it can be
 emailed directly to that student, instead of read by the teacher.
+
+ASSIGNMENT CONTEXT (needed for grounding Misconceptions/Next Step in the edge case described below):
+{context_str}
 
 ORIGINAL REPORT (written for the teacher, about "{student_label}"):
 {submission.student_report}
 
-Rewrite it so it speaks directly to {student_label} in second person ("you"/"your") — not
-about them in the third person, and not as an instruction to their teacher. Keep the exact
-same meaning, facts, and level of detail — do not invent anything new, add generic praise, or
-change what was actually found. Keep the exact same 5 section headings below, in the same
-order, and keep each section's content roughly the same length as the original:
+Rewrite it so it speaks directly to {student_label} — not about them in the third person, and
+not as an instruction to their teacher. Keep the exact same meaning and facts — do not invent
+anything new or change what was actually found. Keep the exact same 4 section headings below,
+in the same order:
 
 ## Submission Summary
 ## Understands
 ## Misconceptions
-## Submission Quality
 ## Next Step
 
-For every section except Next Step, simply redirect the same content at the student directly
-(e.g. "This submission covers..." becomes "Your submission covers...").
+FIRST, check the ORIGINAL REPORT's own Submission Quality section (it won't appear in your
+output, but read it before writing anything). If it says anything other than "Submission
+quality is acceptable" — too short, off-topic, or unreadable — this is a non-attempt/
+insufficient-submission case, and that overrides how Misconceptions happens to be phrased
+there. A teacher-facing Misconceptions entry like "failed to use the word X, indicating a lack
+of understanding of how to apply it" can sound like a botched attempt, but if Submission
+Quality already flagged the submission itself as off-topic/insufficient, nothing was actually
+attempted — do not claim, imply, or describe {student_label} as having addressed, attempted,
+defined, or engaged with any assignment-specific word, concept, or term. This flag governs
+Submission Summary, Misconceptions, and Next Step exactly as described in each below.
 
-For Next Step specifically: the original phrases it as the single most important thing the
-teacher should do to support this student — rewrite it as the single most important thing
-{student_label} should do next, addressed directly to them, as one bullet point starting with
-"- ". Same underlying action, just given to the student as advice instead of to the teacher
-as an instruction.
+Submission Summary: this becomes the email's opening line, right after "Hi {student_label},"
+— so it has to read like the first thing a teacher would actually say to this student in
+person, not a restated report. Never open with "This submission..." or "Your submission..." —
+that's a report opener, not a conversation starter. Lead with whatever they got right or
+genuinely attempted (even partially), then transition naturally into where it breaks down, as
+one short, warm, flowing blurb — not two disconnected sentences bolted together. Model the
+shape exactly on this: "You've got the shape of reversal right. Where it comes apart is the
+unwind: you have each frame return the node it was given, rather than the new head, which
+would leave the caller holding the original first node." If there's truly nothing to credit
+(an off-topic, blank, or unrelated submission) skip the lead-with-credit move — don't invent
+praise that isn't there — and instead open with one plain, kind, non-judgmental line on what
+actually came in, still second person, still conversational, never itemizing what's wrong
+(that's Misconceptions and Next Step's job, not this line's). Second person throughout ("you"/"your").
 
-Output only the 5 sections in the exact format above — no extra commentary before or after."""
+Understands: second person, same redirection (e.g. "Correctly identifies X" becomes "You
+correctly identify X") — EXCEPT if the original says there's nothing correct to point to (e.g.
+"No understanding shown."). Never restate that lack back to the student — it's discouraging
+and says nothing useful. Write exactly this instead, with nothing else in the section:
+Nothing to point to yet.
+
+Misconceptions: do NOT use "you" here. State each mix-up as a plain, neutral fact about the
+reasoning itself — the same way you'd state that a fact is true, not that the student did
+something wrong. Two hard rules:
+(1) Never use a "Label:" or "Name of the issue:" structure of any kind, bolded or not — not
+"Lack of X:", not "Missing Y:", nothing followed by a colon that names the problem before
+explaining it. State the specific fact directly, full stop.
+(2) Never state a generic rule or definition (e.g. "A complete sentence with a clear subject
+and verb is necessary for correctly using an adjective" is a textbook rule, not an observation
+about this student). Every item must be concretely tied to what THIS student actually wrote —
+name the specific thing they said or didn't say, the way "Each recursive call returns the node
+it was passed, not the new head" names the actual bug, not "Recursive functions must return
+consistent types."
+
+If the original Misconceptions/Submission Quality content is really just noting that
+{student_label} didn't understand or attempt the assignment at all (not a genuine content
+misconception), do NOT restate their own confusion back to them as if it were a finding —
+that's clinical, not helpful. Write exactly this instead, with nothing else in the section:
+You'll get there!
+
+Next Step: a direct imperative command, starting with an action verb ("Draw...", "Write...",
+"Try...", "Sketch..."), not "You should..." — e.g. "Draw a three-node list and write down what
+each frame returns as the calls unwind" rather than "You should draw a three-node list...". If
+the original report reflects a genuine attempt at the assignment with a real misconception,
+turn the teacher's action into that same kind of direct command for {student_label} — same
+underlying action, just given to the student as something to do instead of to the teacher as
+an instruction, as one bullet point starting with "- ".
+
+If instead the student didn't attempt the assignment at all, submitted something insufficient,
+or said they're confused/don't understand it — do NOT tell them to seek help, ask their
+teacher, or go to office hours. That's a generic, one-size-fits-all deflection that hands the
+problem to someone else instead of giving the student something they can actually do, and
+imposing it isn't this email's place. Instead, write ONE small, concrete, specific first step
+grounded in the Context above — same direct-imperative-command voice as above, starting with
+an action verb ("Sketch...", "Write...", "Try...", "Draw..."), never "You should..." and never
+a description of what {student_label} should do (not "A first step for {student_label} would
+be..." or "{student_label} can try..." — write the command itself, the same as if you were
+giving it to any other student). The same kind of thing you'd give a student who submitted
+nothing at all (a sketch, one example sentence, a single small piece to attempt), not a
+restatement of what they got wrong. Make clear a rough attempt is enough to move forward. One
+bullet point starting with "- ".
+
+Output only the 4 sections in the exact format above — no extra commentary before or after."""
 
     ai_content = _call_groq(prompt)
     sections = _split_sections(ai_content)
@@ -672,9 +751,49 @@ Output only the 5 sections in the exact format above — no extra commentary bef
         "submission_summary": _find_body(sections, 'Submission Summary'),
         "understands": _find_body(sections, 'Understands'),
         "misconceptions": _find_body(sections, 'Misconceptions'),
-        "submission_quality": _find_body(sections, 'Submission Quality'),
         "next_step": _find_body(sections, 'Next Step'),
     }
+
+
+_NO_MISCONCEPTIONS_MARKERS = ("no misconceptions found",)
+_NO_UNDERSTANDING_MARKERS = ("no understanding shown", "nothing to point to yet")
+
+
+def _is_solid_grasp(report_content: str) -> bool:
+    # A student "did well" on their own report when there was nothing to flag
+    # in Misconceptions AND something real was actually credited in
+    # Understands — checked directly against this one report's own text
+    # rather than a classwide verdict, since a teacher can send a per-student
+    # email without ever building a classwide report at all. Requiring both
+    # conditions (not just an empty Misconceptions) keeps a non-attempt case
+    # — whose Understands reads "Nothing to point to yet." — from being
+    # misread as a strong submission just because nothing was flagged either.
+    sections = _split_sections(report_content)
+    misconceptions_body = _find_body(sections, 'Misconceptions').strip()
+    understands_body = _find_body(sections, 'Understands').strip()
+    no_misconceptions = not misconceptions_body or any(
+        marker in misconceptions_body.lower() for marker in _NO_MISCONCEPTIONS_MARKERS
+    )
+    has_real_understanding = bool(understands_body) and not any(
+        marker in understands_body.lower() for marker in _NO_UNDERSTANDING_MARKERS
+    )
+    return no_misconceptions and has_real_understanding
+
+
+# Randomized, same reasoning as NO_SUBMISSION_SUBJECT_TEMPLATES below — avoids
+# every strong student in a class getting the identical subject line. Kept
+# separate from the default "Suggestions for {title}" line, which still
+# undersells a student who didn't need any correcting.
+SOLID_GRASP_SUBJECT_TEMPLATES = [
+    "Push further: {title}",
+    "Nice work: {title}",
+    "Suggestions on {title}",
+    "Advance: {title}",
+]
+
+
+def _solid_grasp_subject(title: str) -> str:
+    return random.choice(SOLID_GRASP_SUBJECT_TEMPLATES).format(title=title)
 
 
 async def send_student_report(
@@ -685,7 +804,6 @@ async def send_student_report(
     submission_summary_override: str | None = None,
     understands_override: str | None = None,
     misconceptions_override: str | None = None,
-    submission_quality_override: str | None = None,
     next_step_override: str | None = None,
 ) -> dict:
     # Sends one student's report directly to the student's own email — a
@@ -731,8 +849,12 @@ async def send_student_report(
         raise HTTPException(status_code=500, detail="Email is not configured on this server")
 
     student_label = submission.student_name or f"Student {submission.submission_id}"
-    teacher_label = user.display_name or "your teacher"
+    first_name = student_label.split()[0]
     course_name = (coursework.course_name or "").strip()
+    # Never falls back to the raw Google account name a teacher never chose
+    # to show students — if they haven't set a display name, the class name
+    # reads better in "From {teacher}" than an arbitrary Google profile name.
+    teacher_label = user.display_name or course_name or "your teacher"
 
     # Only affects this one outgoing email — submission.student_report (the
     # stored report) is never reassigned or committed here
@@ -741,18 +863,16 @@ async def send_student_report(
         ("Submission Summary", submission_summary_override),
         ("Understands", understands_override),
         ("Misconceptions", misconceptions_override),
-        ("Submission Quality", submission_quality_override),
         ("Next Step", next_step_override),
     ]
     for heading, override in section_overrides:
         if override is not None and override.strip():
             report_content = _override_section_body(report_content, heading, override)
 
-    html_body = _student_email_html(
-        coursework.title,
-        report_content,
-        footer_note=f"Sent from {_signal_link_html()} on behalf of {teacher_label}.",
-        subtitle=course_name or None,
+    html_body = _student_suggestions_email_html(first_name, teacher_label, course_name, coursework.title, report_content)
+    subject = (
+        _solid_grasp_subject(coursework.title) if _is_solid_grasp(report_content)
+        else f"Suggestions for {coursework.title}"
     )
 
     async with httpx.AsyncClient() as client:
@@ -760,9 +880,9 @@ async def send_student_report(
             RESEND_API_URL,
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={
-                "from": "Signal <signal@marcylab.us>",
+                "from": f"{teacher_label} via Signal <signal@marcylab.us>",
                 "to": [student_email],
-                "subject": f"Feedback from {teacher_label}",
+                "subject": subject,
                 "html": html_body,
             },
             timeout=15.0,
@@ -779,6 +899,174 @@ async def send_student_report(
     return {"sent": True, "to": student_email}
 
 
+def build_no_submission_nudge(coursework_id: int, submission_id: int, user: User, db: Session) -> dict:
+    # Builds a lightweight "how to get started" nudge for a student who hasn't
+    # turned in anything readable — grounded only in the assignment's own
+    # context, since there's no submission to analyze. Stored in the same
+    # student_report column a real diagnostic report would use: which "kind"
+    # of content a given student has is always fully determined by their own
+    # has_submitted/content state, so nothing needs to tag or distinguish them.
+    coursework = db.query(Coursework).filter(
+        Coursework.coursework_id == coursework_id,
+        Coursework.user_id == user.user_id,
+    ).first()
+
+    if not coursework:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    submission = db.query(Submission).filter(
+        Submission.submission_id == submission_id,
+        Submission.coursework_id == coursework_id,
+    ).first()
+
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    # The UI only ever offers this for empty/unsubmitted students — this is
+    # the backend backstop so that can't be bypassed
+    if submission.content and submission.content.strip():
+        raise HTTPException(
+            status_code=400, detail="This student has already submitted something — build their report instead",
+        )
+
+    if not coursework.context or not coursework.context.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Add a mental model, description, or rubric before building a nudge",
+        )
+
+    context_str = coursework.context
+    course_name = (coursework.course_name or "").strip()
+
+    prompt = f"""You are an expert educator writing a short, encouraging first step for a
+student who has not turned in this assignment yet, given directly to that student as an
+instruction to follow, not a description of them or their situation.
+
+CLASS: {course_name or "Not specified"}
+ASSIGNMENT: {coursework.title}
+
+CONTEXT:
+{context_str}
+
+The context above may include up to three labeled parts. Mental Model is the teacher's own
+definition of what correct understanding looks like for this assignment — ground the first
+step in it specifically, not in generic study advice.
+
+There is no submission to analyze — do not describe what the student missed or summarize
+anything, since there's nothing to summarize. Write exactly ONE bullet point: a small,
+concrete, finishable-in-a-few-minutes first step that gets the student started (a sketch, a
+single sentence, one definition, one small example) — something specific to this assignment's
+actual content, not generic advice like "review your notes." Make clear a partial attempt is
+worth turning in — this is about starting, not finishing. Write it as a direct imperative
+command, starting with an action verb ("Sketch...", "Write...", "Try...", "Draw..."), not
+"You should..." or "You could..." — e.g. "Sketch the list 1 -> 2 -> 3 on paper, then draw what
+it should look like reversed. Write one sentence about which arrow has to change first." rather
+than "You could start by sketching a list...". Starting the bullet with "- ".
+
+- [One small, specific first step]"""
+
+    submission.student_report = _call_groq(prompt)
+    db.commit()
+
+    return {
+        "submission_id": submission.submission_id,
+        "student_report": submission.student_report,
+    }
+
+
+# Randomized rather than a single fixed template — a class with several
+# non-submitters would otherwise send the identical subject line to each one,
+# which reads as an obvious form email the moment two land in the same inbox
+# (e.g. a sibling, or students who compare notes). Subject stays templated
+# either way — no teacher-editable subject field, per the email redesign spec.
+NO_SUBMISSION_SUBJECT_TEMPLATES = [
+    "Springboard for {title}",
+    "Framework for {title}",
+    "A place to start for {title}",
+    "Suggestion for starting {title}",
+]
+
+
+def _no_submission_subject(title: str) -> str:
+    return random.choice(NO_SUBMISSION_SUBJECT_TEMPLATES).format(title=title)
+
+
+async def send_no_submission_email(
+    coursework_id: int, submission_id: int, user: User, db: Session, start_here_override: str | None = None,
+) -> dict:
+    # Sends the "nothing turned in" nudge directly to the student's own email —
+    # same student-agency path as send_student_report, just for a student with
+    # no submission to build a diagnostic report from in the first place.
+    coursework = db.query(Coursework).filter(
+        Coursework.coursework_id == coursework_id,
+        Coursework.user_id == user.user_id,
+    ).first()
+
+    if not coursework:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    submission = db.query(Submission).filter(
+        Submission.submission_id == submission_id,
+        Submission.coursework_id == coursework_id,
+    ).first()
+
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    if not submission.student_report:
+        raise HTTPException(status_code=400, detail="No nudge built yet for this student")
+
+    if not submission.google_user_id or not coursework.google_course_id:
+        raise HTTPException(status_code=400, detail="Can't identify this student in Google Classroom")
+
+    roster = await fetch_course_roster(coursework.google_course_id, user, db)
+    entry = next((r for r in roster if r["google_user_id"] == submission.google_user_id), None)
+    student_email = entry["email"] if entry else None
+
+    if not student_email:
+        raise HTTPException(status_code=400, detail="No email on file for this student.")
+
+    api_key = os.getenv("RESEND_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Email is not configured on this server")
+
+    student_label = submission.student_name or f"Student {submission.submission_id}"
+    first_name = student_label.split()[0]
+    course_name = (coursework.course_name or "").strip()
+    teacher_label = user.display_name or course_name or "your teacher"
+
+    # Only affects this one outgoing email — submission.student_report (the
+    # stored nudge) is never reassigned or committed here
+    start_here_text = (
+        start_here_override.strip() if start_here_override is not None and start_here_override.strip()
+        else submission.student_report
+    )
+
+    html_body = _no_submission_email_html(first_name, teacher_label, course_name, coursework.title, start_here_text)
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            RESEND_API_URL,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "from": f"{teacher_label} via Signal <signal@marcylab.us>",
+                "to": [student_email],
+                "subject": _no_submission_subject(coursework.title),
+                "html": html_body,
+            },
+            timeout=15.0,
+        )
+
+    if resp.status_code not in (200, 201):
+        try:
+            detail = resp.json().get("message", "Failed to send email")
+        except Exception:
+            detail = "Failed to send email"
+        raise HTTPException(status_code=502, detail=detail)
+
+    print(f"[email] Nudge for '{student_label}' sent directly to {student_email}")
+    return {"sent": True, "to": student_email}
+
 
 # ── Email rendering ──────────────────────────────────────────────────────
 # Mirrors the app's own report display (ReportBody.jsx) instead of dumping
@@ -787,26 +1075,45 @@ async def send_student_report(
 # from Google Fonts; Gmail renders linked webfonts, so this actually shows
 # up as Inter there instead of silently falling back to the system font.
 
-FONT_STACK = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+FONT_STACK = "'Inter', system-ui, Arial, sans-serif"
 
-# color/border/tint per section — mirrors SECTION_META in ReportBody.jsx.
-# Tints are precomputed light hexes rather than alpha-blended at render time,
-# since 8-digit hex alpha support is inconsistent across email clients.
-# Icons are plain Unicode text glyphs (checkmark/x), not emoji — plain text
-# renders identically everywhere with no color/font-rendering variance, and
-# sections with no clean plain-text equivalent (Flagged Students, Next Steps)
-# just skip the icon rather than force one in.
-SECTION_STYLES = {
-    "overview": {"label": "Class Summary", "icon": "", "color": "#aa3bff", "border": "#e3c6ff", "tint": "#f6ecff"},
-    "flagged": {"label": "Flagged Students", "icon": "!", "color": "#d93025", "border": "#f6c6c0", "tint": "#fdecea"},
-    "misconceptions": {"label": "Common Misconceptions", "icon": "✕", "color": "#e67e22", "border": "#f6d2a6", "tint": "#fff2e2"},
-    "themes": {"label": "Solid Themes", "icon": "✓", "color": "#27ae60", "border": "#a9e0c1", "tint": "#e7f7ee"},
-    "next-steps": {"label": "Next Steps", "icon": "&rarr;", "color": "#3b82f6", "border": "#b9d3fb", "tint": "#eaf1ff"},
-    "summary": {"label": "Submission Summary", "icon": "", "color": "#6b7280", "border": "#d8dade", "tint": "#f3f4f6"},
-    "understands": {"label": "Understands", "icon": "✓", "color": "#27ae60", "border": "#a9e0c1", "tint": "#e7f7ee"},
-    "student-misconceptions": {"label": "Misconceptions", "icon": "✕", "color": "#e67e22", "border": "#f6d2a6", "tint": "#fff2e2"},
-    "next-step": {"label": "Next Step", "icon": "", "color": "#3b82f6", "border": "#b9d3fb", "tint": "#eaf1ff"},
+INK = "#08060d"
+MUTED = "#6b6375"
+STRIP_MUTED = "#4a4453"
+HAIRLINE = "#e5e4e7"
+CARD_BORDER = "#cbc9d1"
+
+# Colour tokens — glyph/text colours are one deliberate step darker than the
+# border so every one clears 4.5:1 contrast on white. Never use the border
+# shade as text.
+COLOR = {
+    "purple": {"border": "#aa3bff", "tint": "#e3c6ff", "text": "#9333ea"},
+    "red": {"border": "#d93025", "tint": "#f6c6c0", "text": "#c5221f"},
+    "orange": {"border": "#e67e22", "tint": "#f6d2a6", "text": "#b45309"},
+    "green": {"border": "#27ae60", "tint": "#a9e0c1", "text": "#1e8449"},
+    "blue": {"border": "#3b82f6", "tint": "#b9d3fb", "text": "#2563eb"},
 }
+
+# Plain Unicode/HTML-entity glyphs, not emoji — renders identically everywhere
+# with no font-rendering variance. Every list item carries its own, never a
+# number — the report claims no ordering.
+GLYPH = {"dot": "&#9679;", "bang": "&#33;", "x": "&#10005;", "check": "&#10003;", "arrow": "&rarr;"}
+
+# Single source of truth for verdict wording/colour — shared with the app's
+# own verdict badge (see SECTION_META / verdict logic in ReportBody.jsx).
+VERDICT_STYLES = {
+    "strong": {"label": "Solid Understanding", "color_key": "green"},
+    "mixed": {"label": "Mixed Understanding", "color_key": "orange"},
+    "weak": {"label": "Needs Review", "color_key": "red"},
+}
+
+
+def _verdict_key(flagged_count: int, solid_count: int) -> str:
+    if flagged_count == 0:
+        return "strong"
+    if flagged_count > solid_count:
+        return "weak"
+    return "mixed"
 
 
 def _split_sections(content: str) -> list:
@@ -866,85 +1173,199 @@ def _format_line(line: str) -> str:
     return line
 
 
-def _badge_html(label: str, color: str, tint: str) -> str:
-    return (
-        f'<span style="display:inline-block;margin-bottom:10px;font-family:{FONT_STACK};font-size:12px;'
-        f'font-weight:700;text-transform:uppercase;letter-spacing:0.03em;color:{color};background:{tint};'
-        f'border:1px solid {color};border-radius:100px;padding:5px 12px;">{label}</span><br>'
+def _email_section(
+    color_key: str, glyph: str, title: str, body_html: str, *,
+    filled: bool = False, margin_top: int = 14, glyph_color: str | None = None,
+    body_padding: str = "16px",
+) -> str:
+    # Outlined by default (banner white, title rule in the section's own
+    # colour) — the one exception is a "filled" section (only email 5's START
+    # HERE), which gets a solid coloured banner instead. Rejected an
+    # all-solid design earlier: five saturated bars flatten the hierarchy so
+    # the flagged number stops leading; the one exception is deliberately for
+    # a single-section email where there's nothing else competing for
+    # attention. Every border lives on the banner/body cells themselves, not
+    # the wrapping table — a border+radius on the table AND a coloured banner
+    # cell inside it draws two independent rounded boxes whose corners never
+    # quite line up.
+    c = COLOR[color_key]
+    border_color = c["text"] if filled else c["border"]
+    if filled:
+        band_bg = c["text"]  # darker shade gives contrast for white banner text
+        band_text = "#ffffff"
+        default_glyph_color = "#ffffff"
+    else:
+        band_bg = "#ffffff"
+        band_text = INK
+        default_glyph_color = c["text"]
+    gcolor = glyph_color or default_glyph_color
+    glyph_html = (
+        f'<span style="font-size:15px;font-weight:700;color:{gcolor};">{glyph}</span>'
+        f'<span style="font-size:15px;font-weight:600;letter-spacing:0.06em;color:{band_text};">&nbsp;&nbsp;{title}</span>'
+        if glyph else
+        f'<span style="font-size:15px;font-weight:600;letter-spacing:0.06em;color:{band_text};">{title}</span>'
     )
-
-
-def _section_box(key: str, body_html: str) -> str:
-    meta = SECTION_STYLES[key]
-    icon_html = f'<span style="margin-right:8px;">{meta["icon"]}</span>' if meta["icon"] else ""
+    margin_style = f"margin-top:{margin_top}px;" if margin_top else ""
     return f"""
-<div style="margin-bottom:16px;border:1px solid {meta['border']};border-radius:10px;overflow:hidden;">
-  <div style="background:{meta['color']};padding:10px 16px;">
-    <span style="color:#fff;font-family:{FONT_STACK};font-weight:700;font-size:14px;">{icon_html}{meta['label']}</span>
-  </div>
-  <div style="padding:16px;background:#ffffff;">{body_html}</div>
-</div>"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;{margin_style}border-collapse:separate;border-spacing:0;">
+  <tr>
+    <td bgcolor="{band_bg}" style="padding:14px 16px;background:{band_bg};font-family:{FONT_STACK};border-left:2px solid {border_color};border-right:2px solid {border_color};border-top:2px solid {border_color};border-bottom:1.5px solid {border_color};border-radius:10px 10px 0 0;">
+      {glyph_html}
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:{body_padding};background:#ffffff;font-family:{FONT_STACK};border-left:2px solid {border_color};border-right:2px solid {border_color};border-top:0;border-bottom:2px solid {border_color};border-radius:0 0 10px 10px;">
+      {body_html}
+    </td>
+  </tr>
+</table>"""
 
 
-def _chips_html(items: list, color: str, tint: str, empty_text: str) -> str:
+def _name_pill_html(name: str, color_key: str) -> str:
+    c = COLOR[color_key]
+    return (
+        f'<span style="display:inline-block;margin:0 6px 6px 0;padding:5px 13px;border-radius:100px;'
+        f'background:#ffffff;border:1.5px solid {c["border"]};font-size:13px;font-weight:600;color:{c["text"]};">'
+        f'{_format_line(name)}</span>'
+    )
+
+
+def _name_pills_html(names: list, color_key: str) -> str:
+    return "".join(_name_pill_html(n, color_key) for n in names)
+
+
+def _flat_glyph_list_html(items: list, color_key: str, glyph: str, empty_text: str) -> str:
+    # One glyph + one line per item — Understands/Misconceptions/Spot On/Almost
+    # There. Tighter 8px gaps than the grouped/next-step lists below since
+    # these are short, single-line findings, not multi-line groups.
+    c = COLOR[color_key]
     if not items:
-        return f'<p style="margin:0;font-family:{FONT_STACK};font-size:13px;color:#888;">{empty_text}</p>'
-    return "".join(
-        f'<span style="display:inline-block;margin:0 6px 6px 0;padding:4px 10px;border-radius:100px;'
-        f'background:{tint};border:1px solid {color};font-family:{FONT_STACK};font-size:13px;'
-        f'color:#111;">{_format_line(i)}</span>'
-        for i in items
-    )
-
-
-def _grouped_chips_html(groups: list, color: str, tint: str, empty_text: str) -> str:
-    if not groups:
-        return f'<p style="margin:0;font-family:{FONT_STACK};font-size:13px;color:#888;">{empty_text}</p>'
-    return "".join(
-        f'<div style="margin-bottom:12px;"><p style="margin:0 0 6px;font-family:{FONT_STACK};font-size:13px;'
-        f'font-weight:700;color:#111;">{_format_line(g["label"])}</p>{_chips_html(g["students"], color, tint, "")}</div>'
-        for g in groups
-    )
-
-
-def _numbered_steps_html(steps: list, color: str) -> str:
-    if not steps:
-        return f'<p style="margin:0;font-family:{FONT_STACK};font-size:13px;color:#888;">No next steps provided.</p>'
+        return f'<p style="margin:0;font-family:{FONT_STACK};font-size:14px;color:{INK};">{empty_text}</p>'
     rows = ""
-    for step in steps:
-        # margin-right on the icon, not flex gap — gap on a flex container is
-        # unreliable across email clients and can silently collapse to 0
-        marker_html = (
-            f'<span style="flex-shrink:0;margin-right:8px;font-size:16px;'
-            f'font-weight:700;color:{color};">&rarr;</span>'
-        )
-        rows += (
-            f'<div style="display:flex;margin-bottom:8px;">{marker_html}'
-            f'<span style="font-family:{FONT_STACK};font-size:14px;line-height:1.6;color:#111;'
-            f'padding-top:1px;">{_format_line(step)}</span>'
-            f'</div>'
-        )
+    last = len(items) - 1
+    for i, item in enumerate(items):
+        pb = 0 if i == last else 8
+        rows += f"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;">
+  <tr>
+    <td width="18" style="width:18px;padding:0 10px {pb}px 0;vertical-align:top;font-family:{FONT_STACK};font-size:14px;font-weight:700;color:{c['text']};mso-line-height-rule:exactly;line-height:22px;">{glyph}</td>
+    <td style="padding:0 0 {pb}px;vertical-align:top;font-family:{FONT_STACK};font-size:14px;color:{INK};mso-line-height-rule:exactly;line-height:22px;">{_format_line(item)}</td>
+  </tr>
+</table>"""
     return rows
 
 
-def _icon_bullet_list_html(items: list, color: str, icon_char: str, empty_text: str) -> str:
+def _next_step_list_html(items: list, empty_text: str) -> str:
+    # Next Step / Next Steps — wider glyph cell, bigger glyph, 14px gaps
+    # (these tend to be longer, wrapping actions, not short findings).
+    c = COLOR["blue"]
     if not items:
-        return f'<p style="margin:0;font-family:{FONT_STACK};font-size:13px;color:#888;">{empty_text}</p>'
-    return "".join(
-        f'<div style="display:flex;margin-bottom:6px;">'
-        f'<span style="color:{color};font-weight:700;flex-shrink:0;margin-right:8px;">{icon_char}</span>'
-        f'<span style="font-family:{FONT_STACK};font-size:13px;line-height:1.5;'
-        f'color:#111;">{_format_line(i)}</span></div>'
-        for i in items
-    )
+        return f'<p style="margin:0;font-family:{FONT_STACK};font-size:14px;color:{INK};">{empty_text}</p>'
+    rows = ""
+    last = len(items) - 1
+    for i, item in enumerate(items):
+        pb = 0 if i == last else 14
+        rows += f"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;">
+  <tr>
+    <td width="20" style="width:20px;padding:0 10px {pb}px 0;vertical-align:top;font-family:{FONT_STACK};font-size:16px;font-weight:700;color:{c['text']};mso-line-height-rule:exactly;line-height:23px;">{GLYPH['arrow']}</td>
+    <td style="padding:0 0 {pb}px;vertical-align:top;font-family:{FONT_STACK};font-size:14px;color:{INK};mso-line-height-rule:exactly;line-height:23px;">{_format_line(item)}</td>
+  </tr>
+</table>"""
+    return rows
 
 
-def _paragraphs_html(body: str) -> str:
-    return "".join(
-        f'<p style="margin:0 0 8px;font-family:{FONT_STACK};font-size:14px;line-height:1.6;'
-        f'color:#111;">{_format_line(line)}</p>'
-        for line in body.split('\n') if line.strip()
-    )
+def _single_arrow_item_html(text_html: str) -> str:
+    # Try This / Start Here — always exactly one item, bigger type (16px/26)
+    # than every other list, since it's the one instruction the email is
+    # actually asking the reader to act on right now.
+    c = COLOR["blue"]
+    return f"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;">
+  <tr>
+    <td width="20" style="width:20px;padding:0 10px 0 0;vertical-align:top;font-family:{FONT_STACK};font-size:17px;font-weight:700;color:{c['text']};mso-line-height-rule:exactly;line-height:26px;">{GLYPH['arrow']}</td>
+    <td style="vertical-align:top;font-family:{FONT_STACK};font-size:16px;color:{INK};mso-line-height-rule:exactly;line-height:26px;">{text_html}</td>
+  </tr>
+</table>"""
+
+
+def _grouped_pills_section_html(groups: list, color_key: str, glyph: str, empty_text: str) -> str:
+    # Common Misconceptions / Solid Themes — glyph + label row, then the
+    # student pills indented into the text column on their own row below it.
+    if not groups:
+        return f'<p style="margin:0;font-family:{FONT_STACK};font-size:14px;color:{INK};">{empty_text}</p>'
+    c = COLOR[color_key]
+    rows = ""
+    last = len(groups) - 1
+    for i, g in enumerate(groups):
+        pb = 0 if i == last else 14
+        pills_pb_style = f"padding:0 0 {pb}px;" if pb else ""
+        rows += f"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;">
+  <tr>
+    <td width="18" style="width:18px;padding:0 10px 6px 0;vertical-align:top;font-family:{FONT_STACK};font-size:14px;font-weight:700;color:{c['text']};mso-line-height-rule:exactly;line-height:21px;">{glyph}</td>
+    <td style="padding:0 0 6px;vertical-align:top;font-family:{FONT_STACK};font-size:14px;font-weight:600;color:{INK};mso-line-height-rule:exactly;line-height:21px;">{_format_line(g['label'])}</td>
+  </tr>
+  <tr>
+    <td></td>
+    <td style="{pills_pb_style}font-family:{FONT_STACK};">{_name_pills_html(g['students'], color_key)}</td>
+  </tr>
+</table>"""
+    return rows
+
+
+def _verdict_badge_html(verdict_key: str) -> str:
+    v = VERDICT_STYLES[verdict_key]
+    c = COLOR[v["color_key"]]
+    return f"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;">
+  <tr>
+    <td align="center" style="padding:22px 0 18px;text-align:center;font-family:{FONT_STACK};">
+      <span style="display:inline-block;background:#ffffff;border:1.5px solid {c['border']};border-radius:100px;padding:7px 16px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:{c['text']};mso-line-height-rule:exactly;line-height:16px;">{v['label'].upper()}</span>
+    </td>
+  </tr>
+</table>"""
+
+
+def _class_summary_html(class_summary_text: str, summary_details_text: str) -> str:
+    # Lead paragraph (the short Class Summary) is bold/15px; the expanded
+    # Summary Details narrative follows as regular 14px paragraphs.
+    parts = []
+    if class_summary_text.strip():
+        parts.append(
+            f'<p style="margin:0;font-family:{FONT_STACK};font-size:15px;font-weight:600;color:{INK};'
+            f'mso-line-height-rule:exactly;line-height:24px;">{_format_line(class_summary_text.strip())}</p>'
+        )
+    detail_lines = [line.strip() for line in summary_details_text.split('\n') if line.strip()]
+    for i, line in enumerate(detail_lines):
+        margin_top = 14 if i == 0 else 12
+        parts.append(
+            f'<p style="margin:{margin_top}px 0 0;font-family:{FONT_STACK};font-size:14px;color:{INK};'
+            f'mso-line-height-rule:exactly;line-height:23px;">{_format_line(line)}</p>'
+        )
+    return "".join(parts)
+
+
+def _no_submission_strip_html(no_submission_count: int) -> str:
+    # Own small outlined box (neutral border, not a coloured section) right
+    # before the footer — omitted entirely at 0 rather than printing "0
+    # students haven't submitted," which would read as a false alarm.
+    if no_submission_count <= 0:
+        return ""
+    word = "student hasn&rsquo;t" if no_submission_count == 1 else "students haven&rsquo;t"
+    return f"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;margin-top:14px;border-collapse:separate;border-spacing:0;">
+  <tr>
+    <td style="padding:14px 16px;background:#ffffff;font-family:{FONT_STACK};border-left:2px solid {CARD_BORDER};border-right:2px solid {CARD_BORDER};border-top:2px solid {CARD_BORDER};border-bottom:2px solid {CARD_BORDER};border-radius:10px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;">
+        <tr>
+          <td width="34" style="width:34px;padding:0 10px 0 0;vertical-align:middle;font-family:{FONT_STACK};font-size:26px;font-weight:700;color:{INK};mso-line-height-rule:exactly;line-height:26px;">{no_submission_count}</td>
+          <td style="vertical-align:middle;font-family:{FONT_STACK};font-size:13px;color:{STRIP_MUTED};mso-line-height-rule:exactly;line-height:20px;"><strong style="color:{INK};">{word} submitted this,</strong> consider a check-in before the next class.</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>"""
 
 
 def _generic_sections_html(sections: list) -> str:
@@ -982,19 +1403,19 @@ def _generic_sections_html(sections: list) -> str:
     return html
 
 
-def _classwide_report_body_html(content: str) -> str:
-    # Mirrors ClasswideReportBody — Class Summary (with confusion badge) then
-    # Flagged Students / Common Misconceptions / Solid Themes / Next Steps,
-    # each shown in full rather than as a click-to-expand card like the app,
-    # since email has no interactivity to expand anything.
+def _classwide_report_body_html(content: str, total_students: int, no_submission_count: int) -> str:
+    # Mirrors ClasswideReportBody — Class Summary then Flagged Students /
+    # Common Misconceptions / Solid Themes / Next Steps, each shown in full
+    # rather than as a click-to-expand card, since email has no interactivity.
     sections = _split_sections(content)
-    overview_details = _find_body(sections, 'Summary Details') or _find_body(sections, 'Class Summary')
+    class_summary_text = _find_body(sections, 'Class Summary')
+    summary_details_text = _find_body(sections, 'Summary Details')
     flagged_body = _find_body(sections, 'Flagged Students')
     misconceptions_body = _find_body(sections, 'Common Misconceptions')
     themes_body = _find_body(sections, 'Solid Themes')
     next_steps_body = _find_body(sections, 'Next Steps')
 
-    if not any([overview_details, flagged_body, misconceptions_body, themes_body, next_steps_body]):
+    if not any([class_summary_text, summary_details_text, flagged_body, misconceptions_body, themes_body, next_steps_body]):
         return _generic_sections_html(sections)
 
     flagged_names = _parse_bullets(flagged_body)
@@ -1004,35 +1425,48 @@ def _classwide_report_body_html(content: str) -> str:
 
     flagged_count = len(flagged_names)
     solid_count = len({s for g in theme_groups for s in g["students"]})
+    verdict_key = _verdict_key(flagged_count, solid_count)
 
-    if flagged_count == 0:
-        tier_label, tier_color, tier_tint = "Strong Understanding", "#27ae60", "#e7f7ee"
-    elif flagged_count > solid_count:
-        tier_label, tier_color, tier_tint = "Needs Attention", "#d93025", "#fdecea"
-    else:
-        tier_label, tier_color, tier_tint = "Mixed Understanding", "#e67e22", "#fff2e2"
+    html = _verdict_badge_html(verdict_key)
+    html += _email_section(
+        "purple", GLYPH["dot"], "CLASS SUMMARY",
+        _class_summary_html(class_summary_text, summary_details_text), margin_top=0,
+    )
 
-    summary_html = _badge_html(tier_label, tier_color, tier_tint) + _paragraphs_html(overview_details)
+    flagged_html = f"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;">
+  <tr>
+    <td align="center" style="text-align:center;font-family:{FONT_STACK};font-size:44px;font-weight:700;color:{COLOR['red']['border']};mso-line-height-rule:exactly;line-height:48px;">{flagged_count}</td>
+  </tr>
+  <tr>
+    <td align="center" style="text-align:center;padding-top:4px;font-family:{FONT_STACK};font-size:13px;font-weight:600;color:{MUTED};mso-line-height-rule:exactly;line-height:18px;">of {total_students} students didn&rsquo;t show a sufficient understanding</td>
+  </tr>
+</table>"""
+    html += _email_section(
+        "red", GLYPH["bang"], "FLAGGED STUDENTS", flagged_html,
+        glyph_color=COLOR["red"]["border"], body_padding="20px 16px 22px",
+    )
 
-    html = _section_box("overview", summary_html)
-    html += _section_box("flagged", _chips_html(
-        flagged_names, SECTION_STYLES["flagged"]["color"], SECTION_STYLES["flagged"]["tint"], "No students flagged."
-    ))
-    html += _section_box("misconceptions", _grouped_chips_html(
-        misconception_groups, SECTION_STYLES["misconceptions"]["color"], SECTION_STYLES["misconceptions"]["tint"],
-        "No common misconceptions found.",
-    ))
-    html += _section_box("themes", _grouped_chips_html(
-        theme_groups, SECTION_STYLES["themes"]["color"], SECTION_STYLES["themes"]["tint"], "No solid themes found."
-    ))
-    html += _section_box("next-steps", _numbered_steps_html(next_steps, SECTION_STYLES["next-steps"]["color"]))
+    html += _email_section(
+        "orange", GLYPH["x"], "COMMON MISCONCEPTIONS",
+        _grouped_pills_section_html(misconception_groups, "orange", GLYPH["x"], "No common misconceptions found."),
+    )
+    html += _email_section(
+        "green", GLYPH["check"], "SOLID THEMES",
+        _grouped_pills_section_html(theme_groups, "green", GLYPH["check"], "No solid themes found."),
+    )
+    html += _email_section(
+        "blue", GLYPH["arrow"], "NEXT STEPS",
+        _next_step_list_html(next_steps, "No next steps provided."),
+    )
+    html += _no_submission_strip_html(no_submission_count)
     return html
 
 
 def _student_report_body_html(content: str) -> str:
     # Mirrors StudentReportSummary — Submission Summary (with the quality
-    # flag folded in, same as the modal) then Understands/Misconceptions
-    # side by side, then Next Step with an arrow marker instead of a number
+    # flag folded in, same as the modal) then Understands, Misconceptions,
+    # Next Step, each its own outlined section.
     sections = _split_sections(content)
     summary_body = _find_body(sections, 'Submission Summary')
     understands_body = _find_body(sections, 'Understands')
@@ -1058,78 +1492,267 @@ def _student_report_body_html(content: str) -> str:
         quality_issue = re.sub(r'^[-*]\s+', '', _strip_bold(quality_body.strip()))
 
     summary_html = (
-        f'<p style="margin:0;font-family:{FONT_STACK};font-size:14px;line-height:1.6;'
-        f'color:#111;">{_format_line(summary_body.strip())}</p>'
+        f'<p style="margin:0;font-family:{FONT_STACK};font-size:15px;font-weight:600;color:{INK};'
+        f'mso-line-height-rule:exactly;line-height:24px;">{_format_line(summary_body.strip())}</p>'
         if summary_body else ""
     )
     if quality_issue:
-        summary_html += (
-            f'<div style="display:flex;margin-top:10px;">'
-            f'<span style="color:#b45309;font-weight:700;flex-shrink:0;margin-right:8px;">!</span>'
-            f'<span style="font-family:{FONT_STACK};font-size:13px;color:#b45309;">{quality_issue}</span>'
-            f'</div>'
-        )
-
-    html = _section_box("summary", summary_html) if summary_body else ""
-
-    understands_html = _icon_bullet_list_html(
-        understands, SECTION_STYLES["understands"]["color"], "✓", "No understanding shown."
-    )
-    misconceptions_html = _icon_bullet_list_html(
-        misconceptions, SECTION_STYLES["student-misconceptions"]["color"], "✕", "No misconceptions found."
-    )
-    html += f"""
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        rc = COLOR["red"]
+        summary_html += f"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;margin-top:14px;border-collapse:separate;">
   <tr>
-    <td width="50%" style="vertical-align:top;padding-right:8px;">{_section_box("understands", understands_html)}</td>
-    <td width="50%" style="vertical-align:top;padding-left:8px;">{_section_box("student-misconceptions", misconceptions_html)}</td>
+    <td bgcolor="#ffffff" style="padding:10px 12px;background:#ffffff;border:1px solid {rc['border']};border-radius:8px;font-family:{FONT_STACK};font-size:13px;font-weight:600;color:{rc['text']};mso-line-height-rule:exactly;line-height:19px;">
+      <span style="font-weight:700;">{GLYPH['bang']}</span>&nbsp;&nbsp;{quality_issue}
+    </td>
   </tr>
 </table>"""
 
-    html += _section_box("next-step", _numbered_steps_html(next_steps, SECTION_STYLES["next-step"]["color"]))
+    html = _email_section("purple", GLYPH["dot"], "SUBMISSION SUMMARY", summary_html, margin_top=22) if summary_body else ""
+    html += _email_section(
+        "green", GLYPH["check"], "UNDERSTANDS",
+        _flat_glyph_list_html(understands, "green", GLYPH["check"], "No understanding shown."),
+    )
+    html += _email_section(
+        "orange", GLYPH["x"], "MISCONCEPTIONS",
+        _flat_glyph_list_html(misconceptions, "orange", GLYPH["x"], "No misconceptions found."),
+    )
+    html += _email_section(
+        "blue", GLYPH["arrow"], "NEXT STEP",
+        _next_step_list_html(next_steps, "No next step provided."),
+    )
+    return html
+
+
+def _student_suggestions_body_html(content: str, first_name: str) -> str:
+    # Student-facing "Suggestions" email — Submission Summary becomes the
+    # second-person lead, Understands/Misconceptions/Next Step are relabeled
+    # Spot On/Almost There/Try This. Submission Quality is never shown here —
+    # that's teacher-facing information, not something to surface to the
+    # student directly.
+    sections = _split_sections(content)
+    summary_body = _find_body(sections, 'Submission Summary')
+    understands_body = _find_body(sections, 'Understands')
+    misconceptions_body = _find_body(sections, 'Misconceptions')
+    next_step_body = _find_body(sections, 'Next Step')
+
+    # Falls back to the whole body as a single item when the AI didn't use
+    # bullet formatting — matters here specifically because the encouraging
+    # one-liner this prompt asks for (in place of restating a student's own
+    # confusion back to them) is written as a plain sentence, not a bullet;
+    # without this fallback it would silently vanish instead of showing.
+    parsed_understands = _parse_bullets(understands_body)
+    understands = parsed_understands if parsed_understands else (
+        [understands_body.strip()] if understands_body.strip() else []
+    )
+    parsed_misconceptions = _parse_bullets(misconceptions_body)
+    misconceptions = parsed_misconceptions if parsed_misconceptions else (
+        [misconceptions_body.strip()] if misconceptions_body.strip() else []
+    )
+    parsed_next_steps = _parse_bullets(next_step_body)
+    next_steps = parsed_next_steps if parsed_next_steps else (
+        [next_step_body.strip()] if next_step_body.strip() else []
+    )
+    try_this = next_steps[0] if next_steps else ""
+
+    html = f"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;">
+  <tr>
+    <td style="padding:22px 0 0;font-family:{FONT_STACK};">
+      <p style="margin:0;font-family:{FONT_STACK};font-size:16px;font-weight:700;color:{INK};mso-line-height-rule:exactly;line-height:24px;">Hi {first_name},</p>
+      <p style="margin:10px 0 0;font-family:{FONT_STACK};font-size:16px;color:{INK};mso-line-height-rule:exactly;line-height:26px;">{_format_line(summary_body.strip())}</p>
+    </td>
+  </tr>
+</table>"""
+    html += _email_section(
+        "green", GLYPH["check"], "SPOT ON",
+        _flat_glyph_list_html(understands, "green", GLYPH["check"], "Nothing to flag here yet."), margin_top=20,
+    )
+    html += _email_section(
+        "orange", GLYPH["x"], "ALMOST THERE",
+        _flat_glyph_list_html(misconceptions, "orange", GLYPH["x"], "Nothing to flag here yet."),
+    )
+    if try_this:
+        html += _email_section(
+            "blue", GLYPH["arrow"], "TRY THIS", _single_arrow_item_html(_format_line(try_this)),
+        )
+    return html
+
+
+def _no_submission_body_html(first_name: str, start_here_text: str) -> str:
+    # Email 5 — the only email with a single, filled/solid-banner section.
+    # Never a summary of what's missing: there's no submission to analyse,
+    # only a lightweight first step to get started.
+    html = f"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;">
+  <tr>
+    <td style="padding:22px 0 0;font-family:{FONT_STACK};">
+      <p style="margin:0;font-family:{FONT_STACK};font-size:16px;font-weight:700;color:{INK};mso-line-height-rule:exactly;line-height:24px;">Hi {first_name},</p>
+      <p style="margin:10px 0 0;font-family:{FONT_STACK};font-size:16px;color:{INK};mso-line-height-rule:exactly;line-height:26px;">Here&rsquo;s a way to start this one. You don&rsquo;t need the whole answer to begin &mdash; a rough first attempt is worth more than a blank submission.</p>
+    </td>
+  </tr>
+</table>"""
+    html += _email_section(
+        "blue", GLYPH["arrow"], "START HERE", _single_arrow_item_html(_format_line(start_here_text)),
+        filled=True, margin_top=20,
+    )
     return html
 
 
 def _signal_link_html() -> str:
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
-    return f'<a href="{frontend_url}" style="color:#111;text-decoration:underline;font-weight:600;">Signal</a>'
+    return f'<a href="{frontend_url}" style="color:{MUTED};text-decoration:underline;font-weight:600;">Signal</a>'
 
 
-def _email_shell(title: str, body_html: str, footer_note: str | None = None, subtitle: str | None = None) -> str:
-    subtitle_html = (
-        f'<p style="font-family:{FONT_STACK};font-size:13px;font-style:italic;color:#666;margin:4px 0 0;">{subtitle}</p>'
-        if subtitle else ""
+def _account_link_html() -> str:
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    return f'<a href="{frontend_url}" style="color:{MUTED};text-decoration:underline;font-weight:600;">account</a>'
+
+
+def _footer_teacher_report_html() -> str:
+    return f'Sent from {_signal_link_html()}.'
+
+
+def _footer_reminder_html() -> str:
+    return f'Sent from {_signal_link_html()}.<br>To turn off notifications, please go to your {_account_link_html()}.'
+
+
+def _footer_student_html(teacher_label: str) -> str:
+    return f'Sent from {_signal_link_html()} on behalf of {teacher_label}.'
+
+
+def _email_shell(title: str, subtitle_html: str, body_html: str, preheader: str, footer_html: str) -> str:
+    # No outer card — an email doesn't need visual separation from "the rest
+    # of the page" the way a web-app view does; the email client itself
+    # already does that job. Just a plain white page with a centred 600px
+    # column for line-length, and the per-section outlines doing all the
+    # structural work.
+    preheader_html = (
+        '<div style="display:none;font-size:1px;color:#ffffff;line-height:1px;max-height:0;max-width:0;'
+        f'opacity:0;overflow:hidden;mso-hide:all;">{preheader}' + ('&zwnj;&nbsp;' * 10) + '</div>'
     )
-    return f"""<!DOCTYPE html>
-<html>
+    return f"""<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="x-apple-disable-message-reformatting" />
+<title>{title}</title>
+<!--[if mso]>
+<style type="text/css">
+  body, table, td, p, h1, a {{ font-family: Arial, sans-serif !important; }}
+</style>
+<xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
+<![endif]-->
+<style type="text/css">
+  body {{ margin:0; padding:0; background:#ffffff; -webkit-text-size-adjust:100%; }}
+  table {{ border-spacing:0; }}
+  @media only screen and (max-width:620px) {{
+    .shell {{ width:100% !important; }}
+  }}
+</style>
 </head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:{FONT_STACK};">
-  <div style="max-width:640px;margin:32px auto;padding:32px 28px;background:#ffffff;border-radius:12px;border:1px solid #e5e5e8;font-family:{FONT_STACK};">
-    <div style="margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #111;">
-      <h1 style="font-family:{FONT_STACK};font-size:20px;font-weight:700;margin:0;color:#111;">{title}</h1>
-      {subtitle_html}
-    </div>
-    {body_html}
-    <div style="margin-top:8px;padding-top:16px;border-top:1px solid #e8e8e8;font-family:{FONT_STACK};font-size:12px;color:#aaa;">
-      {footer_note or f"Sent from {_signal_link_html()}."}
-    </div>
-  </div>
+<body style="margin:0;padding:0;background:#ffffff;">
+{preheader_html}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#ffffff" style="width:100%;background:#ffffff;border-collapse:collapse;">
+<tr>
+<td align="center" style="padding:28px 0;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="shell" style="width:600px;margin:0 auto;border-collapse:collapse;">
+  <tr>
+    <td style="padding:0 20px 28px;font-family:{FONT_STACK};">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;">
+        <tr>
+          <td style="padding-bottom:16px;border-bottom:2px solid {INK};font-family:{FONT_STACK};">
+            <h1 style="margin:0;font-size:21px;font-weight:700;letter-spacing:-0.01em;color:{INK};mso-line-height-rule:exactly;line-height:28px;">{title}</h1>
+            {subtitle_html}
+          </td>
+        </tr>
+      </table>
+      {body_html}
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;margin-top:24px;border-collapse:collapse;">
+        <tr>
+          <td style="padding-top:16px;border-top:1px solid {HAIRLINE};font-family:{FONT_STACK};font-size:12px;color:{MUTED};mso-line-height-rule:exactly;line-height:18px;">
+            {footer_html}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</td>
+</tr>
+</table>
 </body>
 </html>"""
 
 
-def _classwide_email_html(title: str, content: str, footer_note: str | None = None, subtitle: str | None = None) -> str:
-    return _email_shell(title, _classwide_report_body_html(content), footer_note, subtitle)
+def _classwide_email_html(assignment_title: str, class_name: str, content: str, total_students: int, no_submission_count: int) -> str:
+    sections = _split_sections(content)
+    flagged_count = len(_parse_bullets(_find_body(sections, 'Flagged Students')))
+    misconception_count = len(_parse_groups(_find_body(sections, 'Common Misconceptions'), 'Misconception'))
+    theme_groups = _parse_groups(_find_body(sections, 'Solid Themes'), 'Theme')
+    solid_count = len({s for g in theme_groups for s in g["students"]})
+    verdict_label = VERDICT_STYLES[_verdict_key(flagged_count, solid_count)]["label"]
+
+    preheader = (
+        f"{verdict_label} &middot; {flagged_count} of {total_students} flagged &middot; "
+        f"{misconception_count} misconception{'s' if misconception_count != 1 else ''}"
+    )
+    subtitle_html = (
+        f'<p style="margin:5px 0 0;font-family:{FONT_STACK};font-size:13px;font-style:italic;color:{MUTED};'
+        f'mso-line-height-rule:exactly;line-height:18px;">{class_name}</p>' if class_name else ""
+    )
+    body_html = _classwide_report_body_html(content, total_students, no_submission_count)
+    return _email_shell(assignment_title, subtitle_html, body_html, preheader, _footer_teacher_report_html())
 
 
-def _student_email_html(title: str, content: str, footer_note: str | None = None, subtitle: str | None = None) -> str:
-    return _email_shell(title, _student_report_body_html(content), footer_note, subtitle)
+def _student_email_html(student_name: str, class_name: str, assignment_title: str, content: str) -> str:
+    sections = _split_sections(content)
+    misconception_count = len(_parse_bullets(_find_body(sections, 'Misconceptions')))
+    next_step_body = _find_body(sections, 'Next Step')
+    next_step_count = len(_parse_bullets(next_step_body) or ([next_step_body.strip()] if next_step_body.strip() else []))
+    preheader = (
+        f"{class_name} &middot; {misconception_count} misconception{'s' if misconception_count != 1 else ''} "
+        f"&middot; {next_step_count} next step{'s' if next_step_count != 1 else ''}"
+    )
+    subtitle_html = (
+        f'<p style="margin:5px 0 0;font-family:{FONT_STACK};font-size:13px;font-style:italic;color:{MUTED};'
+        f'mso-line-height-rule:exactly;line-height:19px;">{class_name}</p>'
+        f'<p style="margin:1px 0 0;font-family:{FONT_STACK};font-size:13px;font-style:italic;color:{MUTED};'
+        f'mso-line-height-rule:exactly;line-height:19px;">{assignment_title}</p>'
+    )
+    body_html = _student_report_body_html(content)
+    return _email_shell(student_name, subtitle_html, body_html, preheader, _footer_teacher_report_html())
+
+
+def _student_suggestions_email_html(first_name: str, teacher_label: str, class_name: str, assignment_title: str, content: str) -> str:
+    summary_body = _find_body(_split_sections(content), 'Submission Summary')
+    first_clause = (summary_body.strip().split('.')[0].strip() + '.') if summary_body.strip() else ""
+    preheader = f"From {teacher_label} &mdash; {first_clause}"
+    subtitle_html = (
+        f'<p style="margin:6px 0 0;font-family:{FONT_STACK};font-size:13px;color:{MUTED};'
+        f'mso-line-height-rule:exactly;line-height:19px;">From '
+        f'<span style="color:{MUTED};">{teacher_label}</span>&nbsp; |&nbsp; '
+        f'<span style="font-style:italic;">{class_name}</span></p>'
+    )
+    body_html = _student_suggestions_body_html(content, first_name)
+    return _email_shell(
+        f"Suggestions for {assignment_title}", subtitle_html, body_html, preheader, _footer_student_html(teacher_label),
+    )
+
+
+def _no_submission_email_html(first_name: str, teacher_label: str, class_name: str, assignment_title: str, start_here_text: str) -> str:
+    preheader = f"From {teacher_label} &mdash; one small first step, no full answer needed"
+    subtitle_html = (
+        f'<p style="margin:6px 0 0;font-family:{FONT_STACK};font-size:13px;color:{MUTED};'
+        f'mso-line-height-rule:exactly;line-height:19px;">From '
+        f'<span style="color:{MUTED};">{teacher_label}</span>&nbsp; |&nbsp; '
+        f'<span style="font-style:italic;">{class_name}</span></p>'
+    )
+    body_html = _no_submission_body_html(first_name, start_here_text)
+    return _email_shell(
+        f"You haven&rsquo;t submitted {assignment_title} yet.", subtitle_html, body_html, preheader,
+        _footer_student_html(teacher_label),
+    )
 
 
 def get_submissions_list(coursework_id: int, user: User, db: Session) -> list:

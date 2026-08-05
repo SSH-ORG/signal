@@ -455,7 +455,6 @@ async def sync_coursework(
     course_id: str,
     user: User,
     db: Session,
-    context: str | None = None,
     course_name: str = "",
     due_date: str | None = None,
     roster: dict | None = None,
@@ -504,11 +503,14 @@ async def sync_coursework(
 
             cw_data = cw_resp.json()
 
-            # Use the context the teacher reviewed/edited on the Assignment Detail screen
-            # Falls back to the raw Classroom description if none was passed in
+            # Assignment Description starts prefilled from Classroom's own text —
+            # Mental Model and Rubric start blank, since the teacher hasn't had a
+            # chance to write/paste anything yet at the moment of first sync.
+            # Editing any of these afterward always goes through PATCH
+            # /api/coursework/{id} (see update_context), never through sync.
             coursework = Coursework(
                 title=cw_data.get("title", "Untitled"),
-                context=context if context is not None else cw_data.get("description", "") or "",
+                assignment_description=cw_data.get("description", "") or "",
                 user_id=user.user_id,
                 google_coursework_id=google_coursework_id,
                 google_course_id=course_id,  # Stored so the background job can re-sync without a teacher being present

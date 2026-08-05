@@ -52,24 +52,33 @@ export async function getCourseAssignments(courseId) {
 // Syncs a specific Google Classroom assignment and its submissions into our database
 // context is optional — the teacher-reviewed mental model/reference material text from the
 // Assignment Detail screen. Only used the first time an assignment is synced (ignored on re-sync).
-export async function syncCoursework(googleCourseworkId, courseId, context, courseName = '') {
+export async function syncCoursework(googleCourseworkId, courseId, courseName = '') {
   const response = await fetch(`${API_BASE_URL}/api/google/coursework/${googleCourseworkId}/sync`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ course_id: courseId, context, course_name: courseName }),
+    body: JSON.stringify({ course_id: courseId, course_name: courseName }),
   })
   if (!response.ok) throw await readErrorDetail(response, 'Failed to sync assignment')
   return response.json()
 }
 
-// Updates the mental model/reference material context used by the AI report for an already-synced assignment
-export async function updateCourseworkContext(courseworkId, context) {
+// Updates the mental model/reference material used by the AI report for an already-synced
+// assignment — 3 separate fields, not one combined string, so nothing here needs parsing.
+export async function updateCourseworkContext(courseworkId, {
+  mentalModel, assignmentDescription, rubric, includeDescription, includeRubric,
+}) {
   const response = await fetch(`${API_BASE_URL}/api/coursework/${courseworkId}`, {
     method: 'PATCH',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ context }),
+    body: JSON.stringify({
+      mental_model: mentalModel,
+      assignment_description: assignmentDescription,
+      rubric,
+      include_description: includeDescription,
+      include_rubric: includeRubric,
+    }),
   })
   if (!response.ok) throw await readErrorDetail(response, 'Failed to update context')
   return response.json()
@@ -208,7 +217,8 @@ export async function draftStudentEmail(courseworkId, submissionId) {
 // sectionOverrides is optional — lets a teacher tailor any section's wording
 // (e.g. "you should..." instead of "the student should...") for just this
 // email, without changing the report as stored. Keys: submissionSummary,
-// understands, misconceptions, submissionQuality, nextStep.
+// understands, misconceptions, nextStep. No submissionQuality — that's
+// teacher-facing information the student-facing email never shows.
 export async function sendReportToStudent(courseworkId, submissionId, sectionOverrides = {}) {
   const response = await fetch(
     `${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions/${submissionId}/send-to-student`,
@@ -220,12 +230,39 @@ export async function sendReportToStudent(courseworkId, submissionId, sectionOve
         submission_summary_override: sectionOverrides.submissionSummary || null,
         understands_override: sectionOverrides.understands || null,
         misconceptions_override: sectionOverrides.misconceptions || null,
-        submission_quality_override: sectionOverrides.submissionQuality || null,
         next_step_override: sectionOverrides.nextStep || null,
       }),
     }
   )
   if (!response.ok) throw await readErrorDetail(response, 'Failed to send report to student')
+  return response.json()
+}
+
+// Builds a "how to get started" nudge for a student with no submission —
+// grounded only in the assignment's context, since there's nothing to analyze.
+export async function buildNudge(courseworkId, submissionId) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions/${submissionId}/nudge`,
+    { method: 'POST', credentials: 'include' }
+  )
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to build nudge')
+  return response.json()
+}
+
+// Sends that nudge directly to the student's own email. startHereOverride is
+// optional — lets a teacher tailor the wording for just this email, without
+// changing the nudge as stored.
+export async function sendNudge(courseworkId, submissionId, startHereOverride) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/coursework/${courseworkId}/report/submissions/${submissionId}/send-nudge`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start_here_override: startHereOverride || null }),
+    }
+  )
+  if (!response.ok) throw await readErrorDetail(response, 'Failed to send nudge')
   return response.json()
 }
 

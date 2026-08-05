@@ -111,6 +111,7 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="Your name"
               />
+              <p className="detail-section-hint">This name is used on emails sent to students.</p>
             </label>
             <label className="account-field">
               <span>Email</span>

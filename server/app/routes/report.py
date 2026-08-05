@@ -19,8 +19,13 @@ class SendToStudentRequest(BaseModel):
     submission_summary_override: str | None = None
     understands_override: str | None = None
     misconceptions_override: str | None = None
-    submission_quality_override: str | None = None
     next_step_override: str | None = None
+
+
+# Optional — lets a teacher tailor the wording of a no-submission nudge
+# before it goes out. Only affects this one email; the stored nudge is untouched.
+class SendNudgeRequest(BaseModel):
+    start_here_override: str | None = None
 
 
 # GET /api/coursework/{coursework_id}/report
@@ -133,6 +138,32 @@ async def send_to_student(
         submission_summary_override=body.submission_summary_override,
         understands_override=body.understands_override,
         misconceptions_override=body.misconceptions_override,
-        submission_quality_override=body.submission_quality_override,
         next_step_override=body.next_step_override,
+    )
+
+
+# POST /api/coursework/{coursework_id}/report/submissions/{submission_id}/nudge
+# Builds a "how to get started" nudge for a student with no submission
+@router.post("/submissions/{submission_id}/nudge")
+def build_nudge(
+    coursework_id: int,
+    submission_id: int,
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    return report_controller.build_no_submission_nudge(coursework_id, submission_id, user, db)
+
+
+# POST /api/coursework/{coursework_id}/report/submissions/{submission_id}/send-nudge
+# Sends that nudge directly to the student's own email
+@router.post("/submissions/{submission_id}/send-nudge")
+async def send_nudge(
+    coursework_id: int,
+    submission_id: int,
+    body: SendNudgeRequest = SendNudgeRequest(),
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    return await report_controller.send_no_submission_email(
+        coursework_id, submission_id, user, db, start_here_override=body.start_here_override,
     )

@@ -15,7 +15,6 @@ router = APIRouter()
 # alongside the request so we know which Google Classroom course to pull from
 class SyncCourseworkRequest(BaseModel):
     course_id: str            # The Google Classroom course ID the assignment belongs to
-    context: str | None = None  # Teacher-reviewed context/rubric; falls back to the Classroom description if omitted
     course_name: str = ""     # Course name stored so it's available even after a course is archived
     due_date: str | None = None      # ISO string — pass through when the frontend already has a fresh value
 
@@ -70,7 +69,7 @@ async def sync_single_coursework(
 ):
     return await google_controller.sync_coursework(
         google_coursework_id, body.course_id, user, db,
-        context=body.context, course_name=body.course_name,
+        course_name=body.course_name,
         due_date=body.due_date,
     )
 
