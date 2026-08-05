@@ -89,6 +89,10 @@ function HelpPage() {
                 Review and edit any section before sending; this never changes the report as it's
                 stored, only the content sent to that student.
               </p>
+              <span className="help-step-badge">
+                For students with empty or no submission, you can build a short, encouraging
+                first step to help them start.
+              </span>
             </div>
           </div>
 

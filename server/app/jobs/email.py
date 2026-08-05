@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 from app.models.user import User
 from app.models.coursework import Coursework
 from app.controllers.google import SUBMITTED_STATES
-from app.controllers.report import FONT_STACK, INK, MUTED, COLOR, _email_shell, _footer_reminder_html
+from app.controllers.report import (
+    FONT_STACK, INK, MUTED, COLOR, _email_shell, _footer_reminder_html, MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT,
+)
 
 RESEND_API_URL = "https://api.resend.com/emails"
 
@@ -114,8 +116,9 @@ async def send_notifs(user: User, db: Session, window_hours: int) -> bool:
     # property (see the Coursework model), not a column itself, so it can't
     # be filtered in SQL; the context check below happens in Python instead.
     # build_report rejects one with no mental model, description, or rubric,
-    # so a card promising a report that will just error isn't "ready to
-    # build" at all
+    # or with fewer than MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT submissions
+    # that actually have content — so a card promising a report that will
+    # just error isn't "ready to build" at all
     candidates = (
         db.query(Coursework)
         .filter(
@@ -127,7 +130,11 @@ async def send_notifs(user: User, db: Session, window_hours: int) -> bool:
         .filter(~Coursework.report.has())
         .all()
     )
-    ready_to_build = [cw for cw in candidates if cw.context and cw.context.strip()]
+    ready_to_build = [
+        cw for cw in candidates
+        if cw.context and cw.context.strip()
+        and sum(1 for s in cw.submissions if s.content and s.content.strip()) >= MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT
+    ]
 
     if not ready_to_build:
         print(f"[email] Nothing ready to build for user_id={user.user_id} — skipping")

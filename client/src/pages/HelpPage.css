@@ -44,6 +44,21 @@
   color: var(--text-h);
 }
 
+.help-step-badge {
+  align-self: center;
+  width: fit-content;
+  max-width: 340px;
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--surface);
+  border: 1.5px solid var(--accent-border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  line-height: 1.5;
+}
+
 .help-step-text {
   margin: 0;
   font-size: 0.875rem;
