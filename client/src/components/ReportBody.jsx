@@ -9,11 +9,18 @@ import './ReportBody.css'
 // (Flagged Students / Common Misconception / Solid Themes / Next Steps), each
 // color-coded and opening its full detail in a modal. Any other mode
 // (student reports) falls back to the original stacked-sections layout.
-function ReportBody({ content, mode, totalStudents }) {
+function ReportBody({ content, mode, analyzedSubmissionCount, totalSubmissionCount, excludedContextNote }) {
   const sections = splitSections(content)
 
   if (mode === 'classwide') {
-    return <ClasswideReportBody sections={sections} totalStudents={totalStudents} />
+    return (
+      <ClasswideReportBody
+        sections={sections}
+        analyzedSubmissionCount={analyzedSubmissionCount}
+        totalSubmissionCount={totalSubmissionCount}
+        excludedContextNote={excludedContextNote}
+      />
+    )
   }
 
   return (
@@ -54,7 +61,7 @@ function verdictKey(flaggedCount, solidCount) {
   return 'mixed'
 }
 
-function ClasswideReportBody({ sections, totalStudents }) {
+function ClasswideReportBody({ sections, analyzedSubmissionCount, totalSubmissionCount, excludedContextNote }) {
   const overviewBody = findBody(sections, 'Class Summary')
   const overviewDetailsBody = findBody(sections, 'Summary Details')
   const flaggedBody = findBody(sections, 'Flagged Students')
@@ -116,8 +123,20 @@ function ClasswideReportBody({ sections, totalStudents }) {
     },
   ]
 
+  const hasSubsetDisclaimer = totalSubmissionCount > 0 && analyzedSubmissionCount < totalSubmissionCount
+
   return (
     <div className="report-body report-body-classwide">
+      {hasSubsetDisclaimer && (
+        <p className="subset-disclaimer">
+          This report reads the first {analyzedSubmissionCount} of {totalSubmissionCount} submissions turned in.{' '}
+          The other {totalSubmissionCount - analyzedSubmissionCount} aren&rsquo;t included here, but you can still build a
+          report for any of those students individually.
+        </p>
+      )}
+      {excludedContextNote && (
+        <p className="subset-disclaimer">{excludedContextNote}</p>
+      )}
       <div className="classwide-top-grid">
         <button
           type="button"
@@ -155,9 +174,6 @@ function ClasswideReportBody({ sections, totalStudents }) {
             <div className="report-card-body report-card-body--stat">
               <div className="report-card-stat">
                 <span className="card-number" style={{ color: SECTION_META.flagged.color }}>{flaggedCount}</span>
-                {Boolean(totalStudents) && (
-                  <p className="card-subtext">of {totalStudents} students didn&rsquo;t show a sufficient understanding</p>
-                )}
               </div>
               <p className="card-hint">See names on the Students tab.</p>
             </div>
@@ -436,8 +452,8 @@ export function StudentReportSummary({
         {editingStudentEmail ? (
           <div className="next-step-edit">
             <p className="next-step-edit-hint">
-              This message will be sent to {studentName} exactly as written above and below —
-              edit any section before sending.
+              This message will be emailed to {studentName} as written above and below. Edit any
+              section before sending.
             </p>
             <DraftTextarea
               label="Next Step wording for this student"
@@ -497,7 +513,7 @@ export function NudgeSummary({
         {editingNudge ? (
           <div className="next-step-edit">
             <p className="next-step-edit-hint">
-              This message will be sent to {studentName} exactly as written below — edit before sending.
+              This message will be emailed to {studentName} as written below. Edit before sending.
             </p>
             <DraftTextarea
               label="Start Here wording for this student"

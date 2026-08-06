@@ -1,6 +1,7 @@
 import os
 import httpx
 from datetime import datetime, timedelta
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.user import User
@@ -8,6 +9,7 @@ from app.models.coursework import Coursework
 from app.controllers.google import SUBMITTED_STATES
 from app.controllers.report import (
     FONT_STACK, INK, MUTED, COLOR, _email_shell, _footer_reminder_html, MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT,
+    build_report, email_report,
 )
 
 RESEND_API_URL = "https://api.resend.com/emails"
@@ -163,3 +165,54 @@ async def send_notifs(user: User, db: Session, window_hours: int) -> bool:
 
     print(f"[email] {'Daily' if window_hours <= 24 else 'Weekly'} notif sent to {user.email}")
     return True
+
+
+async def send_immediate_reports(user: User, db: Session) -> int:
+    """Auto-build and email a class-wide report for any of this teacher's
+    assignments that are due, have enough real submissions, and don't have a
+    report yet. Returns how many were sent."""
+    now = datetime.utcnow()
+    cutoff = now - timedelta(days=7)
+    # Teacher-configurable, but never below the same floor build_report itself
+    # enforces (see MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT) — a stale/bad value
+    # below that would just make every candidate 400 in build_report anyway
+    min_submissions = max(
+        user.immediate_min_submissions or MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT,
+        MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT,
+    )
+
+    # Same shape as send_notifs's candidate query — due within the window, no
+    # report yet — except this one actually builds and sends instead of just
+    # reminding. ~Coursework.report.has() is what makes this one-shot: once
+    # built (by this job or a manual Build click), it's excluded here forever,
+    # so no assignment can ever trigger this more than once.
+    candidates = (
+        db.query(Coursework)
+        .filter(
+            Coursework.user_id == user.user_id,
+            Coursework.due_date.isnot(None),
+            Coursework.due_date <= now,
+            Coursework.due_date >= cutoff,
+        )
+        .filter(~Coursework.report.has())
+        .all()
+    )
+    ready = [
+        cw for cw in candidates
+        if cw.context and cw.context.strip()
+        and sum(1 for s in cw.submissions if s.content and s.content.strip()) >= min_submissions
+    ]
+
+    sent = 0
+    for cw in ready:
+        try:
+            build_report(cw.coursework_id, user, db)
+            await email_report(cw.coursework_id, user, db)
+            print(f"[email] Immediate report auto-sent for '{cw.title}' (user_id={user.user_id})")
+            sent += 1
+        except HTTPException as e:
+            print(f"[email] Immediate report skipped for '{cw.title}' (user_id={user.user_id}): {e.detail}")
+        except Exception as e:
+            print(f"[email] Unexpected error auto-sending '{cw.title}' (user_id={user.user_id}): {e}")
+
+    return sent

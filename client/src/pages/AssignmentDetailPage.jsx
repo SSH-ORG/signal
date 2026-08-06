@@ -16,7 +16,7 @@ const SYNC_DEBOUNCE_MS = 10_000
 // Third screen — shown when a teacher clicks into a specific assignment.
 // Lets the teacher review/edit the mental model and supporting materials,
 // sync submissions, and build/view the AI confusion report.
-function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, onDataChange }) {
+function AssignmentDetailPage({ assignment, syncedRecord, initialTab, initialReportMode, onBack, onDataChange }) {
   // Local copy of the synced record so this screen can react immediately to
   // sync/context-save actions without waiting on a parent re-fetch
   const [record, setRecord] = useState(syncedRecord)
@@ -66,7 +66,7 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
   // 'classwide' | 'students' — Students lists everyone (submitted or not), works
   // whether or not a classwide report has ever been built, and highlights
   // whoever the classwide report flagged once one exists
-  const [reportMode, setReportMode] = useState('classwide')
+  const [reportMode, setReportMode] = useState(initialReportMode || 'classwide')
   const [submissions, setSubmissions] = useState([])
   const [studentSearch, setStudentSearch] = useState('')
   // { key, message } for whichever student's Build press just failed/was
@@ -100,6 +100,10 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
   const [editingNudge, setEditingNudge] = useState(false)
   const [nudgeDraft, setNudgeDraft] = useState('')
   const emailDropdownRef = useRef(null)
+  // Widens the student report modal itself — a teacher toggle, not automatic,
+  // since the two-column Understands/Misconceptions layout can feel squeezed
+  // on a report with a lot of text
+  const [reportModalExpanded, setReportModalExpanded] = useState(false)
 
   // Closes the email dropdown on Escape or on any click outside it
   useEffect(() => {
@@ -704,6 +708,15 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
               <Icon name="sync" className="sync-btn-icon" />
             </button>
           </div>
+          {/* Only past the cap, never at or under it — matches build_report's
+              own MAX_SUBMISSIONS_FOR_CLASSWIDE_REPORT floor exactly, so this
+              warning and what actually happens on Build always agree. */}
+          {record && record.content_submission_count > 50 && (
+            <p className="detail-section-hint detail-section-hint--warning">
+              You&rsquo;ve reached the 50 submission limit. If you build a report now, it&rsquo;ll
+              be based on a subset of the class, not the class as a whole.
+            </p>
+          )}
           {actionError && <p className="report-error">{actionError}</p>}
         </div>
 
@@ -919,7 +932,13 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
                     </div>
                     {emailSuccess && <p className="save-success">Sent to your email</p>}
                     {emailError && <p className="report-error">{emailError}</p>}
-                    <ReportBody content={report.content} mode="classwide" totalStudents={record?.total_students} />
+                    <ReportBody
+                      content={report.content}
+                      mode="classwide"
+                      analyzedSubmissionCount={report.analyzed_submission_count}
+                      totalSubmissionCount={report.total_submission_count}
+                      excludedContextNote={report.excluded_context_note}
+                    />
                   </div>
                 )}
               </>
@@ -985,11 +1004,20 @@ function AssignmentDetailPage({ assignment, syncedRecord, initialTab, onBack, on
           return (
             <div className="modal-backdrop" onClick={() => setStudentReportModal(null)}>
               <div
-                className="modal-card modal-card--report"
+                className={`modal-card modal-card--report${reportModalExpanded ? ' modal-card--report-expanded' : ''}`}
                 role="dialog"
                 aria-modal="true"
                 onClick={(e) => e.stopPropagation()}
               >
+                <button
+                  className="modal-expand"
+                  type="button"
+                  aria-label={reportModalExpanded ? 'Shrink' : 'Expand'}
+                  data-tooltip={reportModalExpanded ? 'Shrink' : 'Expand'}
+                  onClick={() => setReportModalExpanded((v) => !v)}
+                >
+                  <Icon name={reportModalExpanded ? 'close_fullscreen' : 'open_in_full'} />
+                </button>
                 <button
                   className="modal-close"
                   type="button"

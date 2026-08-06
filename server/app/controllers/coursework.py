@@ -39,6 +39,23 @@ def get_all_coursework(user: User, db: Session) -> list:
         .all()
     )
 
+    # Real-content count — matches build_report's own filter exactly (non-null,
+    # non-whitespace-only content), not just "submitted" state. This is what the
+    # 50-submission cap actually counts against, so it's what the Detail screen's
+    # pre-build warning needs — submission_count above would over/undercount it
+    # since a submission can be in a SUBMITTED_STATES state but still be blank.
+    content_counts = dict(
+        db.query(Submission.coursework_id, func.count(Submission.submission_id))
+        .join(Coursework, Coursework.coursework_id == Submission.coursework_id)
+        .filter(
+            Coursework.user_id == user.user_id,
+            Submission.content.isnot(None),
+            func.trim(Submission.content) != "",
+        )
+        .group_by(Submission.coursework_id)
+        .all()
+    )
+
     return [
         {
             "coursework_id": cw.coursework_id,
@@ -54,6 +71,7 @@ def get_all_coursework(user: User, db: Session) -> list:
             "due_date": cw.due_date.isoformat() if cw.due_date else None,
             "submission_count": counts.get(cw.coursework_id, 0),
             "total_students": total_counts.get(cw.coursework_id, 0),
+            "content_submission_count": content_counts.get(cw.coursework_id, 0),
             "has_report": cw.report is not None,  # Lets the Detail screen skip fetching a report that doesn't exist yet
         }
         for cw in coursework

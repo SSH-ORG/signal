@@ -53,6 +53,12 @@
   min-height: 56px;
   padding: 14px 18px;
   background: var(--section-color);
+  /* Own corner-clipping instead of relying on the parent card's
+     overflow:hidden — lets .report-card allow overflow:visible so taller
+     content never gets clipped, while the banner still reads as flush with
+     the card's rounded top corners. 1px less than the card's own radius so
+     it sits just inside the card's 1px border. */
+  border-radius: 9px 9px 0 0;
 }
 
 .section-banner-icon {
@@ -76,6 +82,18 @@
    of the old horizontal narrowing (centered, less than full width) — it
    sizes to its own (shorter) content and sits centered within the row,
    instead of being stretched to match the taller grid beside it. ── */
+
+.subset-disclaimer {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1.5px solid #d93025;
+  border-radius: 10px;
+  background: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #c5221f;
+}
 
 .classwide-top-grid {
   display: grid;
@@ -167,15 +185,13 @@
 .report-card-row {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  grid-template-rows: repeat(2, 1fr);
+  /* Rows size to their content — aspect-ratio (on the row or on individual
+     cards) fought with grid's default stretch alignment and let content
+     spill past a card's box instead of the box actually growing, so square-
+     ish sizing now comes from .report-card's min-height instead (plain,
+     predictable content-based sizing with a floor, no ratio involved). */
+  grid-auto-rows: auto;
   gap: 14px;
-  aspect-ratio: 1 / 1;
-}
-
-@media (max-width: 700px) {
-  .report-card-row {
-    aspect-ratio: auto;
-  }
 }
 
 .report-card {
@@ -185,8 +201,12 @@
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  min-height: 120px;
+  /* aspect-ratio here fought with the grid's stretch alignment and let
+     content spill past the box instead of the box actually growing —
+     min-height is plain, predictable content-based sizing with a floor,
+     square-ish for typical content without that risk. */
+  overflow: visible;
+  min-height: 145px;
   position: relative;
   /* The whole card is a button now — reset default button chrome, including
      the browser's default button padding that was leaving a gap between the
@@ -232,11 +252,14 @@
 }
 
 /* Flagged Students is the only card with a preview (the count) — center it
-   since the body has nothing else in it */
+   since the body has nothing else in it. Own tighter gap (not the shared
+   10px) since its two lines (subtext + hint) read as one grouped caption,
+   not two separately-spaced items the way the other cards' content is. */
 .report-card-body--stat {
   align-items: center;
   justify-content: center;
   text-align: center;
+  gap: 4px;
 }
 
 /* .report-card-stat's flex:1 (needed elsewhere to push content down) stretches
@@ -251,12 +274,10 @@
   justify-content: center;
 }
 
-/* Pinned to the bottom of the card, separate from the centered count/subtext
-   above it — an auto top margin absorbs the remaining space instead of the
-   hint being centered as part of the same block */
+/* No own margin — report-card-body--stat's 4px gap (see above) is the only
+   spacing between this and the subtext right above it */
 .report-card-body--stat .card-hint {
-  margin-top: auto;
-  padding-top: 8px;
+  margin-top: 0;
 }
 
 /* Bottom-right cue that the whole card is clickable, replacing a "See more" button */
@@ -272,16 +293,9 @@
 .card-number {
   display: block;
   width: 100%;
-  font-size: 2.5rem;
+  font-size: 3.2rem;
+  line-height: 1;
   font-weight: 700;
-  text-align: center;
-}
-
-.card-subtext {
-  margin: 4px 0 0;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text);
   text-align: center;
 }
 

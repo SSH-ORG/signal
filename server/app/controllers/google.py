@@ -531,17 +531,31 @@ async def sync_coursework(
         if roster is None:
             roster = await _fetch_course_roster(course_id, user, db, client)
 
-        # Fetch all current student submissions from Google Classroom
-        subs_resp = await _get_with_refresh(
-            client,
-            f"{CLASSROOM_BASE}/courses/{course_id}/courseWork/{google_coursework_id}/studentSubmissions",
-            user, db,
-        )
+        # Fetch all current student submissions from Google Classroom — paginated,
+        # since a large class's submissions can exceed a single page (same as
+        # _fetch_course_roster/fetch_course_coursework above). Without this loop,
+        # a class bigger than one page would silently lose every submission past
+        # the first — under-counting totals, missing no-submission tracking, and
+        # feeding build_report an incomplete roster for anyone beyond page one.
+        submissions_data = []
+        page_token = None
+        while True:
+            subs_resp = await _get_with_refresh(
+                client,
+                f"{CLASSROOM_BASE}/courses/{course_id}/courseWork/{google_coursework_id}/studentSubmissions",
+                user, db,
+                params={"pageToken": page_token} if page_token else {},
+            )
 
-        if subs_resp.status_code != 200:
-            raise HTTPException(status_code=502, detail="Failed to fetch submissions from Google Classroom")
+            if subs_resp.status_code != 200:
+                raise HTTPException(status_code=502, detail="Failed to fetch submissions from Google Classroom")
 
-        submissions_data = subs_resp.json().get("studentSubmissions", [])
+            page = subs_resp.json()
+            submissions_data.extend(page.get("studentSubmissions", []))
+
+            page_token = page.get("nextPageToken")
+            if not page_token:
+                break
 
         # One row per entry Google returns — that's every enrolled student, whether
         # or not they've submitted anything (state tells us which). Kept live on every

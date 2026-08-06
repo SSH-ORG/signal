@@ -181,3 +181,173 @@
   color: var(--text);
   line-height: 1.5;
 }
+
+/* ── Warning hint (scoped locally — not reliably shared across pages) ── */
+.detail-section-hint--warning {
+  color: #b45309;
+}
+
+/* ── Immediate Auto-Send (beta) ────────────────────────── */
+.account-beta-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 8px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #b45309;
+  background: #fef3c7;
+  border-radius: 100px;
+  vertical-align: middle;
+}
+
+.account-immediate-settings {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.account-field--inline {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+/* ── Submission-count stepper (custom, not a native number input) ─── */
+.account-stepper {
+  display: inline-flex;
+  align-items: stretch;
+  align-self: flex-start;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.account-stepper-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  border: none;
+  background: var(--surface);
+  color: var(--text-h);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.account-stepper-btn--minus {
+  border-right: 1px solid var(--border);
+}
+
+.account-stepper-btn--plus {
+  border-left: 1px solid var(--border);
+}
+
+.account-stepper-btn:hover:not(:disabled) {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.account-stepper-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.account-stepper-input {
+  width: 46px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-h);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.account-stepper-input:focus {
+  outline: none;
+}
+
+/* ── Modal (matches AuthPage.css's pattern, scoped here since cross-page
+   CSS imports aren't reliable in this app) ───────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.modal-card {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  padding: 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  background: var(--accent-bg);
+}
+
+.modal-title {
+  margin: 0 0 12px;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.modal-text {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.modal-text:last-of-type {
+  margin-bottom: 16px;
+}
+
+.modal-card .account-field {
+  margin-bottom: 12px;
+}
+
+.modal-card .detail-section-hint {
+  margin-bottom: 12px;
+}
+
+.modal-card .detail-actions {
+  margin-top: 8px;
+}

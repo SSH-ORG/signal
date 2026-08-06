@@ -665,15 +665,55 @@
 /* The student report popup needs more room and its own scroll than the
    "For students" modal it shares .modal-card/.modal-backdrop styling with. */
 .modal-card--report {
-  max-width: 640px;
+  /* Was 640px — the Understands/Misconceptions two-column layout squeezed
+     long text into narrow ~280px columns, wrapping into a dense wall of
+     short lines. Wider modal gives each column more breathing room. */
+  max-width: 760px;
   max-height: 80vh;
   overflow-y: auto;
+  transition: max-width 0.15s;
+}
+
+/* Teacher-triggered widen — see .modal-expand below. !important because the
+   class-toggle was confirmed working in DevTools (the class does get added)
+   but the width never changed — something in the cascade was still winning
+   over a plain same-specificity override, so this removes any ambiguity. */
+.modal-card--report.modal-card--report-expanded {
+  max-width: min(1100px, 94vw) !important;
+}
+
+/* Scoped override, not a change to the shared .modal-close in AuthPage.css —
+   guarantees it stacks above modal-header-row's content in this modal
+   specifically, same reasoning as .modal-expand's z-index below. */
+.modal-card--report .modal-close {
+  z-index: 2;
+}
+
+.modal-expand {
+  position: absolute;
+  top: 12px;
+  right: 44px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.modal-expand:hover {
+  background: var(--accent-bg);
 }
 
 /* Title + Refresh/Email actions side by side in the student report popup,
    matching the classwide report's own header layout. Right-padded so the
-   rightmost button doesn't sit under .modal-close, which is absolutely
-   positioned in the same top-right corner of the card. */
+   rightmost button doesn't sit under .modal-close/.modal-expand, which are
+   absolutely positioned in the same top-right corner of the card — widened
+   from 32px (enough for one button) to clear both. */
 .modal-header-row {
   display: flex;
   align-items: center;
@@ -681,7 +721,9 @@
   gap: 12px;
   flex-wrap: wrap;
   margin-bottom: 12px;
-  padding-right: 32px;
+  padding-right: 76px;
+  position: relative;
+  z-index: 1;
 }
 
 .modal-header-row .modal-title {
