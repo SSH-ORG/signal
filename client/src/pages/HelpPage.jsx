@@ -117,9 +117,18 @@ function HelpPage() {
 
         <div className="help-tip">
           <p>
-            <strong>Tip:</strong> In <strong>Account</strong>, turn on Email Notifications to get an
-            email once an assignment reaches its due date or has enough submissions to build a
-            report — choose whether that arrives each day or each week.
+            <strong>Tip:</strong> In <strong>Account</strong>, turn on Email Notifications to get a
+            reminder email once an assignment reaches its due date or has enough submissions to
+            build a report — choose whether that arrives each day or each week.
+          </p>
+        </div>
+
+        <div className="help-tip">
+          <p>
+            <strong>Tip:</strong> <strong>Auto-Send</strong> (Beta), also in
+            <strong> Account</strong>, is separate from Email Notifications above. Instead of just
+            reminding you, it automatically builds and emails a class-wide report as soon as an
+            assignment is due and has enough submissions.
           </p>
         </div>
 

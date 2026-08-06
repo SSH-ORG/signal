@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from starlette.requests import Request
 
 from app.models.user import User
+from app.controllers.report import MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT
 
 # Set up the Google OAuth client
 # authlib handles the redirect, token exchange, and user info fetching for us
@@ -122,6 +123,10 @@ def _serialize_user(user: User) -> dict:
         "email": user.email,
         "email_notifications_enabled": user.email_notifications_enabled,
         "notification_preference": user.notification_preference or "daily",
+        "immediate_reports_enabled": user.immediate_reports_enabled,
+        "immediate_min_submissions": user.immediate_min_submissions or MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT,
+        "immediate_include_assignments": user.immediate_include_assignments,
+        "immediate_include_short_answer": user.immediate_include_short_answer,
     }
 
 
@@ -143,12 +148,20 @@ async def get_me(request: Request, db: Session):
 
 # Updates editable profile fields — only the fields the teacher actually sent are changed
 VALID_PREFERENCES = {"daily", "weekly"}
+# Upper bound on the teacher-configurable Auto-Send threshold — keeps a class
+# with a lot of students from silently becoming a one-shot 50+ submission
+# prompt (see MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT for the floor)
+MAX_IMMEDIATE_MIN_SUBMISSIONS = 50
 
 async def update_profile(
     display_name: str | None,
     email: str | None,
     email_notifications_enabled: bool | None,
     notification_preference: str | None,
+    immediate_reports_enabled: bool | None,
+    immediate_min_submissions: int | None,
+    immediate_include_assignments: bool | None,
+    immediate_include_short_answer: bool | None,
     user: User,
     db: Session,
 ):
@@ -160,6 +173,20 @@ async def update_profile(
         user.email_notifications_enabled = email_notifications_enabled
     if notification_preference is not None and notification_preference in VALID_PREFERENCES:
         user.notification_preference = notification_preference
+    if immediate_reports_enabled is not None:
+        user.immediate_reports_enabled = immediate_reports_enabled
+    # Independent of notification_preference — never allowed below the same floor
+    # build_report itself enforces (anything lower would just 400 anyway), or
+    # above MAX_IMMEDIATE_MIN_SUBMISSIONS
+    if immediate_min_submissions is not None:
+        user.immediate_min_submissions = min(
+            max(immediate_min_submissions, MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT),
+            MAX_IMMEDIATE_MIN_SUBMISSIONS,
+        )
+    if immediate_include_assignments is not None:
+        user.immediate_include_assignments = immediate_include_assignments
+    if immediate_include_short_answer is not None:
+        user.immediate_include_short_answer = immediate_include_short_answer
 
     db.commit()
     db.refresh(user)

@@ -458,6 +458,7 @@ async def sync_coursework(
     course_name: str = "",
     due_date: str | None = None,
     roster: dict | None = None,
+    work_type: str | None = None,
 ) -> dict:
     # Syncs a Google Classroom assignment into our database
     # If it was already synced before, syncs any new submissions instead of blocking
@@ -484,6 +485,11 @@ async def sync_coursework(
                 coursework.course_name = course_name
             if course_id and not coursework.google_course_id:
                 coursework.google_course_id = course_id
+            # Backfills work_type for rows synced before this column existed —
+            # a coursework's type never changes in Classroom, so once known it's
+            # never overwritten (mirrors google_course_id's backfill-only behavior)
+            if work_type and not coursework.work_type:
+                coursework.work_type = work_type
             # due_date isn't a "created once" fact like context — it can genuinely
             # change (a teacher extends a deadline), so it always takes the
             # freshest value passed in rather than only backfilling
@@ -518,6 +524,7 @@ async def sync_coursework(
                 # Falls back to parsing the freshly-fetched courseWork detail directly,
                 # in case the caller didn't already have a live due date on hand
                 due_date=parsed_due_date if due_date is not None else _parse_due_date(cw_data),
+                work_type=work_type or cw_data.get("workType"),
             )
             db.add(coursework)
             db.commit()
@@ -531,17 +538,31 @@ async def sync_coursework(
         if roster is None:
             roster = await _fetch_course_roster(course_id, user, db, client)
 
-        # Fetch all current student submissions from Google Classroom
-        subs_resp = await _get_with_refresh(
-            client,
-            f"{CLASSROOM_BASE}/courses/{course_id}/courseWork/{google_coursework_id}/studentSubmissions",
-            user, db,
-        )
+        # Fetch all current student submissions from Google Classroom — paginated,
+        # since a large class's submissions can exceed a single page (same as
+        # _fetch_course_roster/fetch_course_coursework above). Without this loop,
+        # a class bigger than one page would silently lose every submission past
+        # the first — under-counting totals, missing no-submission tracking, and
+        # feeding build_report an incomplete roster for anyone beyond page one.
+        submissions_data = []
+        page_token = None
+        while True:
+            subs_resp = await _get_with_refresh(
+                client,
+                f"{CLASSROOM_BASE}/courses/{course_id}/courseWork/{google_coursework_id}/studentSubmissions",
+                user, db,
+                params={"pageToken": page_token} if page_token else {},
+            )
 
-        if subs_resp.status_code != 200:
-            raise HTTPException(status_code=502, detail="Failed to fetch submissions from Google Classroom")
+            if subs_resp.status_code != 200:
+                raise HTTPException(status_code=502, detail="Failed to fetch submissions from Google Classroom")
 
-        submissions_data = subs_resp.json().get("studentSubmissions", [])
+            page = subs_resp.json()
+            submissions_data.extend(page.get("studentSubmissions", []))
+
+            page_token = page.get("nextPageToken")
+            if not page_token:
+                break
 
         # One row per entry Google returns — that's every enrolled student, whether
         # or not they've submitted anything (state tells us which). Kept live on every
@@ -672,6 +693,7 @@ async def sync_course_coursework(course_id: str, course_name: str, user: User, d
             course_name=course_name,
             due_date=due_date.isoformat() if due_date else None,
             roster=roster,
+            work_type=cw.get("workType"),
         )
         synced_count += 1
 

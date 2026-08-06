@@ -4,6 +4,21 @@ import { getTheme, setTheme } from '../lib/theme.js'
 import './Screens.css'
 import './AccountPage.css'
 
+// Strips everything but digits, then any leading zeros — used on the
+// submission-threshold stepper's text input so typing never shows something
+// like "08"; a plain type="number" input leaves that up to the browser,
+// which isn't consistent across them.
+function sanitizeDigits(raw) {
+  return raw.replace(/\D/g, '').replace(/^0+(?=\d)/, '')
+}
+
+const MIN_IMMEDIATE_SUBMISSIONS = 5
+const MAX_IMMEDIATE_SUBMISSIONS = 50
+
+function clampMinSubmissions(value) {
+  return Math.min(MAX_IMMEDIATE_SUBMISSIONS, Math.max(MIN_IMMEDIATE_SUBMISSIONS, value || MIN_IMMEDIATE_SUBMISSIONS))
+}
+
 // Account management screen, reached via the sidebar. Lets the teacher edit
 // their name/email, toggle email notification preference, log out, or
 // permanently delete their account.
@@ -19,6 +34,15 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
   const [emailEnabled, setEmailEnabled] = useState(!!user.email_notifications_enabled)
   const [notificationPref, setNotificationPref] = useState(user.notification_preference || 'daily')
   const [savingNotifications, setSavingNotifications] = useState(false)
+
+  // Independent of the reminder-digest settings above — a separate beta feature,
+  // see handleImmediateToggleClick for why enabling it goes through a modal first
+  const [immediateEnabled, setImmediateEnabled] = useState(!!user.immediate_reports_enabled)
+  const [immediateMinSubmissions, setImmediateMinSubmissions] = useState(String(user.immediate_min_submissions || 5))
+  const [includeAssignments, setIncludeAssignments] = useState(user.immediate_include_assignments !== false)
+  const [includeShortAnswer, setIncludeShortAnswer] = useState(user.immediate_include_short_answer !== false)
+  const [savingImmediate, setSavingImmediate] = useState(false)
+  const [showImmediateModal, setShowImmediateModal] = useState(false)
 
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -71,6 +95,80 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
       setNotificationPref(prev)
     } finally {
       setSavingNotifications(false)
+    }
+  }
+
+  // Turning it on opens the walkthrough modal first (constraints + threshold
+  // setup) since this fires without any review step — turning it back off
+  // needs no such confirmation, so that goes straight through.
+  function handleImmediateToggleClick() {
+    if (immediateEnabled) {
+      handleDisableImmediate()
+    } else {
+      setShowImmediateModal(true)
+    }
+  }
+
+  async function handleDisableImmediate() {
+    const prev = immediateEnabled
+    setImmediateEnabled(false)
+    setSavingImmediate(true)
+    try {
+      const updated = await updateProfile({ immediate_reports_enabled: false })
+      onProfileUpdated(updated)
+    } catch {
+      setImmediateEnabled(prev)
+    } finally {
+      setSavingImmediate(false)
+    }
+  }
+
+  async function handleEnableImmediate(minSubmissions, includeAssignmentsValue, includeShortAnswerValue) {
+    setSavingImmediate(true)
+    try {
+      const updated = await updateProfile({
+        immediate_reports_enabled: true,
+        immediate_min_submissions: minSubmissions,
+        immediate_include_assignments: includeAssignmentsValue,
+        immediate_include_short_answer: includeShortAnswerValue,
+      })
+      onProfileUpdated(updated)
+      setImmediateEnabled(true)
+      setImmediateMinSubmissions(String(updated.immediate_min_submissions || minSubmissions))
+      setIncludeAssignments(updated.immediate_include_assignments !== false)
+      setIncludeShortAnswer(updated.immediate_include_short_answer !== false)
+      setShowImmediateModal(false)
+    } finally {
+      setSavingImmediate(false)
+    }
+  }
+
+  async function handleToggleIncludeType(field, setter, prev) {
+    const next = !prev
+    setter(next)
+    setSavingImmediate(true)
+    try {
+      const updated = await updateProfile({ [field]: next })
+      onProfileUpdated(updated)
+    } catch {
+      setter(prev)
+    } finally {
+      setSavingImmediate(false)
+    }
+  }
+
+  async function handleUpdateImmediateMinSubmissions(value) {
+    const prev = immediateMinSubmissions
+    setImmediateMinSubmissions(String(value))
+    setSavingImmediate(true)
+    try {
+      const updated = await updateProfile({ immediate_min_submissions: value })
+      onProfileUpdated(updated)
+      setImmediateMinSubmissions(String(updated.immediate_min_submissions || value))
+    } catch {
+      setImmediateMinSubmissions(prev)
+    } finally {
+      setSavingImmediate(false)
     }
   }
 
@@ -174,6 +272,129 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
           )}
         </section>
 
+        <section className="detail-section" id="immediate-notifications">
+          <div className="account-notif-header-row">
+            <h2 className="detail-section-title">
+              Auto-Send <span className="account-beta-badge">Beta</span>
+            </h2>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={immediateEnabled}
+              aria-label="Auto-Send"
+              className={`account-toggle${immediateEnabled ? ' account-toggle--on' : ''}`}
+              onClick={handleImmediateToggleClick}
+              disabled={savingImmediate}
+            >
+              <span className="account-toggle-knob" />
+            </button>
+          </div>
+          <p className="detail-section-hint">
+            Automatically builds and emails a class-wide report the moment an assignment is due
+            and has enough submissions, instead of just reminding you to build it.
+          </p>
+
+          {immediateEnabled && (
+            <div className="account-immediate-settings">
+              {/* A plain div, not a <label> — a label wrapping more than one
+                  interactive control (two buttons + an input, here) makes
+                  browsers forward stray clicks in its empty space to one of
+                  the nested controls, which read as "clicking whitespace
+                  changes the count." */}
+              <div className="account-field account-field--inline">
+                <span>
+                  Signal sets a minimum of 5 submissions before auto-building, you can edit this
+                  based on your class size.
+                </span>
+                <div className="account-stepper">
+                  <button
+                    type="button"
+                    className="account-stepper-btn account-stepper-btn--minus"
+                    aria-label="Decrease minimum submissions"
+                    onClick={() => handleUpdateImmediateMinSubmissions(
+                      clampMinSubmissions((Number(immediateMinSubmissions) || 5) - 1),
+                    )}
+                    disabled={savingImmediate || Number(immediateMinSubmissions) <= MIN_IMMEDIATE_SUBMISSIONS}
+                  >
+                    &minus;
+                  </button>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    className="account-stepper-input"
+                    value={immediateMinSubmissions}
+                    onChange={(e) => setImmediateMinSubmissions(sanitizeDigits(e.target.value))}
+                    onBlur={(e) => handleUpdateImmediateMinSubmissions(clampMinSubmissions(Number(e.target.value)))}
+                    disabled={savingImmediate}
+                  />
+                  <button
+                    type="button"
+                    className="account-stepper-btn account-stepper-btn--plus"
+                    aria-label="Increase minimum submissions"
+                    onClick={() => handleUpdateImmediateMinSubmissions(
+                      clampMinSubmissions((Number(immediateMinSubmissions) || 5) + 1),
+                    )}
+                    disabled={savingImmediate || Number(immediateMinSubmissions) >= MAX_IMMEDIATE_SUBMISSIONS}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <div className="account-checkbox-group">
+                <span className="account-checkbox-group-label">Only send reports for:</span>
+                <label className="account-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={includeAssignments}
+                    onChange={() => handleToggleIncludeType(
+                      'immediate_include_assignments', setIncludeAssignments, includeAssignments,
+                    )}
+                    disabled={savingImmediate}
+                  />
+                  Full assignments
+                </label>
+                <label className="account-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={includeShortAnswer}
+                    onChange={() => handleToggleIncludeType(
+                      'immediate_include_short_answer', setIncludeShortAnswer, includeShortAnswer,
+                    )}
+                    disabled={savingImmediate}
+                  />
+                  Short-answer questions
+                </label>
+              </div>
+              {Number(immediateMinSubmissions) < MIN_IMMEDIATE_SUBMISSIONS && (
+                <p className="detail-section-hint detail-section-hint--warning">
+                  Minimum is 5 submissions.
+                </p>
+              )}
+              {Number(immediateMinSubmissions) > MAX_IMMEDIATE_SUBMISSIONS && (
+                <p className="detail-section-hint detail-section-hint--warning">
+                  Max 50 submissions.
+                </p>
+              )}
+              <p className="detail-section-hint">
+                This only covers class-wide reports. Per-student reports and nudges need to be
+                built in Signal.
+              </p>
+              <p className="detail-section-hint detail-section-hint--warning">
+                Signal only syncs the assignment description automatically from Classroom. You
+                can either add a Mental Model and rubric to your assignment description, or input
+                these manually beforehand for a more accurate report. There&apos;s no review
+                before it&apos;s emailed.
+              </p>
+              <p className="detail-section-hint">
+                Only assignments due in the past 7 days are considered, and each one is only ever
+                auto-sent once. Building a report yourself first (or after) won&apos;t trigger a
+                duplicate email.
+              </p>
+            </div>
+          )}
+        </section>
+
         <section className="detail-section">
           <h2 className="detail-section-title">Appearance</h2>
           <p className="detail-section-hint">Choose how Signal looks. System follows your device setting.</p>
@@ -236,6 +457,136 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
           )}
         </section>
       </main>
+
+      {showImmediateModal && (
+        <ImmediateModal
+          initialMinSubmissions={immediateMinSubmissions}
+          initialIncludeAssignments={includeAssignments}
+          initialIncludeShortAnswer={includeShortAnswer}
+          saving={savingImmediate}
+          onCancel={() => setShowImmediateModal(false)}
+          onConfirm={handleEnableImmediate}
+        />
+      )}
+    </div>
+  )
+}
+
+// Walkthrough gate shown the moment a teacher turns Auto-Send on — covers
+// what it does, what it doesn't, what affects report quality, and lets them
+// set their submission threshold, all in one place, since the goal is that a
+// teacher shouldn't need to come back here again after enabling it.
+function ImmediateModal({
+  initialMinSubmissions, initialIncludeAssignments, initialIncludeShortAnswer, saving, onCancel, onConfirm,
+}) {
+  const [minSubmissions, setMinSubmissions] = useState(String(initialMinSubmissions || 5))
+  const [includeAssignments, setIncludeAssignments] = useState(initialIncludeAssignments !== false)
+  const [includeShortAnswer, setIncludeShortAnswer] = useState(initialIncludeShortAnswer !== false)
+  const belowFloor = Number(minSubmissions) < MIN_IMMEDIATE_SUBMISSIONS
+  const aboveCeiling = Number(minSubmissions) > MAX_IMMEDIATE_SUBMISSIONS
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close" type="button" aria-label="Close" onClick={onCancel}>
+          &times;
+        </button>
+        <h2 className="modal-title">
+          Turn on Auto-Send <span className="account-beta-badge">Beta</span>
+        </h2>
+        <p className="modal-text">
+          Once an assignment is due and has enough submissions, Signal automatically builds and
+          emails you its class-wide report. There is no need to open the app and do it manually!
+        </p>
+        <p className="modal-text">
+          This only covers <strong>class-wide</strong> reports. Per-student reports and nudges
+          need to be built in Signal.
+        </p>
+        <p className="modal-text">
+          Signal only syncs the assignment description automatically from Classroom. You can
+          either add a Mental Model and rubric to your assignment description, or input these
+          manually beforehand for a more accurate report. There's no review before it's emailed.
+        </p>
+        <p className="modal-text">
+          Only assignments due in the past 7 days are considered, and each one is only ever
+          auto-sent once. Building a report yourself first (or after) won't trigger a duplicate
+          email.
+        </p>
+        {/* A plain div, not a <label> — see the matching comment on the
+            inline settings version of this stepper for why. */}
+        <div className="account-field">
+          <span>
+            Signal sets a minimum of 5 submissions before auto-building, you can edit this based
+            on your class size.
+          </span>
+          <div className="account-stepper">
+            <button
+              type="button"
+              className="account-stepper-btn account-stepper-btn--minus"
+              aria-label="Decrease minimum submissions"
+              onClick={() => setMinSubmissions(String(clampMinSubmissions((Number(minSubmissions) || 5) - 1)))}
+              disabled={Number(minSubmissions) <= MIN_IMMEDIATE_SUBMISSIONS}
+            >
+              &minus;
+            </button>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              className="account-stepper-input"
+              value={minSubmissions}
+              onChange={(e) => setMinSubmissions(sanitizeDigits(e.target.value))}
+            />
+            <button
+              type="button"
+              className="account-stepper-btn account-stepper-btn--plus"
+              aria-label="Increase minimum submissions"
+              onClick={() => setMinSubmissions(String(clampMinSubmissions((Number(minSubmissions) || 5) + 1)))}
+              disabled={Number(minSubmissions) >= MAX_IMMEDIATE_SUBMISSIONS}
+            >
+              +
+            </button>
+          </div>
+        </div>
+        {belowFloor && (
+          <p className="detail-section-hint detail-section-hint--warning">Minimum is 5 submissions.</p>
+        )}
+        {aboveCeiling && (
+          <p className="detail-section-hint detail-section-hint--warning">Max 50 submissions.</p>
+        )}
+        <div className="account-checkbox-group">
+          <span className="account-checkbox-group-label">Only send reports for:</span>
+          <label className="account-checkbox-row">
+            <input
+              type="checkbox"
+              checked={includeAssignments}
+              onChange={() => setIncludeAssignments((v) => !v)}
+            />
+            Full assignments
+          </label>
+          <label className="account-checkbox-row">
+            <input
+              type="checkbox"
+              checked={includeShortAnswer}
+              onChange={() => setIncludeShortAnswer((v) => !v)}
+            />
+            Short-answer questions
+          </label>
+        </div>
+        <div className="detail-actions">
+          <button
+            type="button"
+            className="primary-btn"
+            onClick={() => onConfirm(clampMinSubmissions(Number(minSubmissions)), includeAssignments, includeShortAnswer)}
+            disabled={saving || belowFloor || aboveCeiling}
+          >
+            {saving ? 'Enabling ..' : 'Enable Auto-Send'}
+          </button>
+          <button type="button" className="secondary-btn" onClick={onCancel} disabled={saving}>
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

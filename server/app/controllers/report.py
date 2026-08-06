@@ -19,6 +19,12 @@ RESEND_API_URL = "https://api.resend.com/emails"
 # A class-wide report needs enough real submissions to meaningfully compare
 # across students — see build_report
 MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT = 5
+# Ceiling on how many submissions go into a single class-wide analysis — past
+# this, one prompt starts costing a lot of tokens per call and the AI's
+# per-student accuracy degrades with a long list of names to track, even
+# within the model's context window. See build_report for how the excess is
+# disclosed rather than silently dropped.
+MAX_SUBMISSIONS_FOR_CLASSWIDE_REPORT = 50
 
 # Initialize the Groq client — free tier, no credit card required
 # Uses Llama 3.3 70B which is strong enough for educational text analysis
@@ -199,6 +205,17 @@ def build_report(coursework_id: int, user: User, db: Session) -> dict:
             detail="Add a mental model, description, or rubric before building a report",
         )
 
+    # A class-wide prompt with too many submissions in it costs a lot of tokens
+    # per call and the AI's per-student accuracy degrades with a long list of
+    # names to track, even within the model's context window — so only the
+    # first MAX_SUBMISSIONS_FOR_CLASSWIDE_REPORT (stable order, same as above)
+    # ever go to the AI. total_submission_count is the real, full count before
+    # this cap — the UI/email disclose the difference rather than silently
+    # describing "the class" from a subset.
+    total_submission_count = len(ordered_submissions)
+    analyzed_submissions = ordered_submissions[:MAX_SUBMISSIONS_FOR_CLASSWIDE_REPORT]
+    analyzed_submission_count = len(analyzed_submissions)
+
     # Submissions are labeled with their real, permanent submission_id — not a
     # position in this list — so the number the AI hands back always identifies
     # the exact same submission, no matter how the set of real submissions
@@ -209,7 +226,7 @@ def build_report(coursework_id: int, user: User, db: Session) -> dict:
     # unmodified since the stored report ends up with real names either way.
     submissions_text = "\n\n".join([
         f"{sub.submission_id}: {sub.content}"
-        for sub in ordered_submissions
+        for sub in analyzed_submissions
     ])
 
     context_str = coursework.context
@@ -354,7 +371,7 @@ EDGE CASE RULES — follow strictly no matter what:
 
     ai_content = _call_groq(prompt)
 
-    report_content = _resolve_student_references(ai_content, ordered_submissions)
+    report_content = _resolve_student_references(ai_content, analyzed_submissions)
 
     # Rebuilding — replace the existing report's content instead of blocking,
     # since new submissions or an edited prompt/context are exactly why a
@@ -370,6 +387,9 @@ EDGE CASE RULES — follow strictly no matter what:
         )
         db.add(report)
 
+    report.analyzed_submission_count = analyzed_submission_count
+    report.total_submission_count = total_submission_count
+
     db.commit()
     db.refresh(report)
 
@@ -378,6 +398,8 @@ EDGE CASE RULES — follow strictly no matter what:
         "coursework_id": coursework.coursework_id,
         "content": report.content,
         "created_at": report.created_at,
+        "analyzed_submission_count": report.analyzed_submission_count,
+        "total_submission_count": report.total_submission_count,
     }
 
 
@@ -456,6 +478,9 @@ def get_report(coursework_id: int, user: User, db: Session) -> dict:
         "coursework_id": coursework.coursework_id,
         "content": coursework.report.content,
         "created_at": coursework.report.created_at,
+        "analyzed_submission_count": coursework.report.analyzed_submission_count,
+        "total_submission_count": coursework.report.total_submission_count,
+        "excluded_context_note": _excluded_context_note(coursework),
     }
 
 
@@ -475,6 +500,35 @@ def delete_report(coursework_id: int, user: User, db: Session) -> dict:
     db.delete(coursework.report)
     db.commit()
     return {"deleted": True}
+
+
+def _excluded_context_note(coursework: Coursework) -> str | None:
+    # A teacher can toggle either off in the Context tab while leaving the
+    # text itself in place — easy to forget, and Auto-Send has no review step
+    # to catch it, so this surfaces it on the report itself instead. Reflects
+    # the assignment's current toggle state, same as the report content would
+    # if rebuilt right now.
+    rubric_excluded = bool(coursework.rubric and coursework.rubric.strip()) and not coursework.include_rubric
+    description_excluded = (
+        bool(coursework.assignment_description and coursework.assignment_description.strip())
+        and not coursework.include_description
+    )
+    if rubric_excluded and description_excluded:
+        return (
+            "This assignment has a description and a rubric saved, but both are excluded from "
+            "what's sent to the AI. Turn them on in the Context tab to factor them in."
+        )
+    if rubric_excluded:
+        return (
+            "This assignment has a rubric saved, but it's excluded from what's sent to the AI. "
+            "Turn it on in the Context tab to factor it in."
+        )
+    if description_excluded:
+        return (
+            "This assignment has a description saved, but it's excluded from what's sent to the AI. "
+            "Turn it on in the Context tab to factor it in."
+        )
+    return None
 
 
 async def email_report(coursework_id: int, user: User, db: Session) -> dict:
@@ -508,7 +562,12 @@ async def email_report(coursework_id: int, user: User, db: Session) -> dict:
         1 for s in coursework.submissions
         if s.state not in SUBMITTED_STATES or not (s.content and s.content.strip())
     )
-    html_body = _classwide_email_html(coursework.title, course_name, coursework.report.content, total_students, no_submission_count)
+    html_body = _classwide_email_html(
+        coursework.title, course_name, coursework.report.content,
+        total_students, no_submission_count, coursework.coursework_id,
+        coursework.report.analyzed_submission_count, coursework.report.total_submission_count,
+        _excluded_context_note(coursework),
+    )
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -984,6 +1043,7 @@ NO_SUBMISSION_SUBJECT_TEMPLATES = [
     "Framework for {title}",
     "A place to start for {title}",
     "Suggestion for starting {title}",
+    "An entry point for: {title}",
 ]
 
 
@@ -1230,8 +1290,31 @@ def _name_pill_html(name: str, color_key: str) -> str:
     )
 
 
+# Past this many, a single misconception/theme group turns into a wall of
+# pills — cap it and point to the classwide tab in the app, which shows the
+# exact same group in full, uncapped (see ClasswideReportBody's modal)
+MAX_NAMES_PER_GROUP_IN_EMAIL = 8
+
+
 def _name_pills_html(names: list, color_key: str) -> str:
-    return "".join(_name_pill_html(n, color_key) for n in names)
+    shown = names[:MAX_NAMES_PER_GROUP_IN_EMAIL]
+    return "".join(_name_pill_html(n, color_key) for n in shown)
+
+
+def _more_names_line_html(names: list, color_key: str, coursework_id: int) -> str:
+    # Plain colored text below the pill row, not another pill — a link, not a
+    # boxed control, since it's just pointing at more detail, not an action.
+    remaining = len(names) - MAX_NAMES_PER_GROUP_IN_EMAIL
+    if remaining <= 0:
+        return ""
+    c = COLOR[color_key]
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    more_url = f"{frontend_url}/?coursework_id={coursework_id}"
+    return (
+        f'<p style="margin:6px 0 0;font-family:{FONT_STACK};font-size:12px;">'
+        f'<a href="{more_url}" style="color:{c["text"]};font-weight:600;text-decoration:none;">'
+        f'+{remaining} more in Signal</a></p>'
+    )
 
 
 def _flat_glyph_list_html(items: list, color_key: str, glyph: str, empty_text: str) -> str:
@@ -1289,7 +1372,7 @@ def _single_arrow_item_html(text_html: str) -> str:
 </table>"""
 
 
-def _grouped_pills_section_html(groups: list, color_key: str, glyph: str, empty_text: str) -> str:
+def _grouped_pills_section_html(groups: list, color_key: str, glyph: str, empty_text: str, coursework_id: int) -> str:
     # Common Misconceptions / Solid Themes — glyph + label row, then the
     # student pills indented into the text column on their own row below it.
     if not groups:
@@ -1308,7 +1391,7 @@ def _grouped_pills_section_html(groups: list, color_key: str, glyph: str, empty_
   </tr>
   <tr>
     <td></td>
-    <td style="{pills_pb_style}font-family:{FONT_STACK};">{_name_pills_html(g['students'], color_key)}</td>
+    <td style="{pills_pb_style}font-family:{FONT_STACK};">{_name_pills_html(g['students'], color_key)}{_more_names_line_html(g['students'], color_key, coursework_id)}</td>
   </tr>
 </table>"""
     return rows
@@ -1321,7 +1404,7 @@ def _verdict_badge_html(verdict_key: str) -> str:
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;">
   <tr>
     <td align="center" style="padding:22px 0 18px;text-align:center;font-family:{FONT_STACK};">
-      <span style="display:inline-block;background:#ffffff;border:1.5px solid {c['border']};border-radius:100px;padding:7px 16px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:{c['text']};mso-line-height-rule:exactly;line-height:16px;">{v['label'].upper()}</span>
+      <span style="display:inline-block;background:#ffffff;border:2px solid {c['border']};border-radius:100px;padding:10px 22px;font-size:15px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:{c['text']};mso-line-height-rule:exactly;line-height:19px;">{v['label'].upper()}</span>
     </td>
   </tr>
 </table>"""
@@ -1346,21 +1429,32 @@ def _class_summary_html(class_summary_text: str, summary_details_text: str) -> s
     return "".join(parts)
 
 
-def _no_submission_strip_html(no_submission_count: int) -> str:
+def _no_submission_strip_html(no_submission_count: int, coursework_id: int) -> str:
     # Own small outlined box (neutral border, not a coloured section) right
     # before the footer — omitted entirely at 0 rather than printing "0
-    # students haven't submitted," which would read as a false alarm.
+    # students haven't submitted," which would read as a false alarm. No names
+    # here (matches the app's Flagged Students card — count only, "see names on
+    # the Students tab" instead) since a big non-submitting group would
+    # otherwise turn this into an unbounded list.
     if no_submission_count <= 0:
         return ""
     word = "student hasn&rsquo;t" if no_submission_count == 1 else "students haven&rsquo;t"
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    students_url = f"{frontend_url}/?coursework_id={coursework_id}&view=students"
     return f"""
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;margin-top:14px;border-collapse:separate;border-spacing:0;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;margin-top:14px;border-collapse:collapse;">
   <tr>
-    <td style="padding:14px 16px;background:#ffffff;font-family:{FONT_STACK};border-left:2px solid {CARD_BORDER};border-right:2px solid {CARD_BORDER};border-top:2px solid {CARD_BORDER};border-bottom:2px solid {CARD_BORDER};border-radius:10px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;">
+    <td align="center" style="text-align:center;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="340" style="width:340px;max-width:100%;border-collapse:separate;border-spacing:0;">
         <tr>
-          <td width="34" style="width:34px;padding:0 10px 0 0;vertical-align:middle;font-family:{FONT_STACK};font-size:26px;font-weight:700;color:{INK};mso-line-height-rule:exactly;line-height:26px;">{no_submission_count}</td>
-          <td style="vertical-align:middle;font-family:{FONT_STACK};font-size:13px;color:{STRIP_MUTED};mso-line-height-rule:exactly;line-height:20px;"><strong style="color:{INK};">{word} submitted this,</strong> consider a check-in before the next class.</td>
+          <td style="padding:14px 16px;background:#ffffff;font-family:{FONT_STACK};border:2px solid {CARD_BORDER};border-radius:10px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-collapse:collapse;">
+              <tr>
+                <td width="46" valign="middle" style="width:46px;padding:0 12px 0 0;vertical-align:middle;font-family:{FONT_STACK};font-size:36px;font-weight:700;color:{INK};mso-line-height-rule:exactly;line-height:1.2;">{no_submission_count}</td>
+                <td valign="middle" style="vertical-align:middle;font-family:{FONT_STACK};font-size:13px;color:{STRIP_MUTED};mso-line-height-rule:exactly;line-height:20px;">{word} submitted this. <a href="{students_url}" style="color:{COLOR['purple']['text']};font-weight:600;text-decoration:underline;">Send them an email with a point of entry</a>.</td>
+              </tr>
+            </table>
+          </td>
         </tr>
       </table>
     </td>
@@ -1403,7 +1497,41 @@ def _generic_sections_html(sections: list) -> str:
     return html
 
 
-def _classwide_report_body_html(content: str, total_students: int, no_submission_count: int) -> str:
+def _subset_disclaimer_html(analyzed_count: int, total_count: int) -> str:
+    # Omitted entirely when the report covers everyone — only shows once a
+    # class actually exceeded MAX_SUBMISSIONS_FOR_CLASSWIDE_REPORT (see
+    # build_report), so this never reads as a false alarm on a normal class.
+    if total_count <= 0 or analyzed_count >= total_count:
+        return ""
+    remaining = total_count - analyzed_count
+    return f"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;margin-bottom:18px;border-collapse:separate;border-spacing:0;">
+  <tr>
+    <td style="padding:12px 16px;background:#ffffff;font-family:{FONT_STACK};border:1.5px solid {COLOR['red']['border']};border-radius:10px;font-size:13px;color:{COLOR['red']['text']};mso-line-height-rule:exactly;line-height:19px;">
+      This report reads the first {analyzed_count} of {total_count} submissions turned in. The other {remaining} aren&rsquo;t included here, but you can still build a report for any of those students individually.
+    </td>
+  </tr>
+</table>"""
+
+
+def _excluded_context_note_html(note: str | None) -> str:
+    if not note:
+        return ""
+    return f"""
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;margin-bottom:18px;border-collapse:separate;border-spacing:0;">
+  <tr>
+    <td style="padding:12px 16px;background:#ffffff;font-family:{FONT_STACK};border:1.5px solid {COLOR['red']['border']};border-radius:10px;font-size:13px;color:{COLOR['red']['text']};mso-line-height-rule:exactly;line-height:19px;">
+      {note}
+    </td>
+  </tr>
+</table>"""
+
+
+def _classwide_report_body_html(
+    content: str, total_students: int, no_submission_count: int, coursework_id: int,
+    analyzed_submission_count: int = 0, total_submission_count: int = 0,
+    excluded_context_note: str | None = None,
+) -> str:
     # Mirrors ClasswideReportBody — Class Summary then Flagged Students /
     # Common Misconceptions / Solid Themes / Next Steps, each shown in full
     # rather than as a click-to-expand card, since email has no interactivity.
@@ -1428,6 +1556,8 @@ def _classwide_report_body_html(content: str, total_students: int, no_submission
     verdict_key = _verdict_key(flagged_count, solid_count)
 
     html = _verdict_badge_html(verdict_key)
+    html += _subset_disclaimer_html(analyzed_submission_count, total_submission_count)
+    html += _excluded_context_note_html(excluded_context_note)
     html += _email_section(
         "purple", GLYPH["dot"], "CLASS SUMMARY",
         _class_summary_html(class_summary_text, summary_details_text), margin_top=0,
@@ -1449,17 +1579,21 @@ def _classwide_report_body_html(content: str, total_students: int, no_submission
 
     html += _email_section(
         "orange", GLYPH["x"], "COMMON MISCONCEPTIONS",
-        _grouped_pills_section_html(misconception_groups, "orange", GLYPH["x"], "No common misconceptions found."),
+        _grouped_pills_section_html(
+            misconception_groups, "orange", GLYPH["x"], "No common misconceptions found.", coursework_id,
+        ),
     )
     html += _email_section(
         "green", GLYPH["check"], "SOLID THEMES",
-        _grouped_pills_section_html(theme_groups, "green", GLYPH["check"], "No solid themes found."),
+        _grouped_pills_section_html(
+            theme_groups, "green", GLYPH["check"], "No solid themes found.", coursework_id,
+        ),
     )
     html += _email_section(
         "blue", GLYPH["arrow"], "NEXT STEPS",
         _next_step_list_html(next_steps, "No next steps provided."),
     )
-    html += _no_submission_strip_html(no_submission_count)
+    html += _no_submission_strip_html(no_submission_count, coursework_id)
     return html
 
 
@@ -1612,6 +1746,19 @@ def _footer_teacher_report_html() -> str:
     return f'Sent from {_signal_link_html()}.'
 
 
+def _footer_classwide_report_html(coursework_id: int) -> str:
+    # view=students — this line is specifically about per-student reports, so
+    # it lands on that sub-tab directly instead of the classwide summary the
+    # teacher is already reading in this email
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    assignment_url = f"{frontend_url}/?coursework_id={coursework_id}&view=students"
+    assignment_link = (
+        f'<a href="{assignment_url}" style="color:{MUTED};text-decoration:underline;font-weight:600;">'
+        f'this assignment</a>'
+    )
+    return f'Sent from {_signal_link_html()}. See per-student reports or rebuild this report from {assignment_link}.'
+
+
 def _footer_reminder_html() -> str:
     return f'Sent from {_signal_link_html()}.<br>To turn off notifications, please go to your {_account_link_html()}.'
 
@@ -1685,7 +1832,12 @@ def _email_shell(title: str, subtitle_html: str, body_html: str, preheader: str,
 </html>"""
 
 
-def _classwide_email_html(assignment_title: str, class_name: str, content: str, total_students: int, no_submission_count: int) -> str:
+def _classwide_email_html(
+    assignment_title: str, class_name: str, content: str, total_students: int,
+    no_submission_count: int, coursework_id: int,
+    analyzed_submission_count: int = 0, total_submission_count: int = 0,
+    excluded_context_note: str | None = None,
+) -> str:
     sections = _split_sections(content)
     flagged_count = len(_parse_bullets(_find_body(sections, 'Flagged Students')))
     misconception_count = len(_parse_groups(_find_body(sections, 'Common Misconceptions'), 'Misconception'))
@@ -1701,8 +1853,14 @@ def _classwide_email_html(assignment_title: str, class_name: str, content: str, 
         f'<p style="margin:5px 0 0;font-family:{FONT_STACK};font-size:13px;font-style:italic;color:{MUTED};'
         f'mso-line-height-rule:exactly;line-height:18px;">{class_name}</p>' if class_name else ""
     )
-    body_html = _classwide_report_body_html(content, total_students, no_submission_count)
-    return _email_shell(assignment_title, subtitle_html, body_html, preheader, _footer_teacher_report_html())
+    body_html = _classwide_report_body_html(
+        content, total_students, no_submission_count, coursework_id,
+        analyzed_submission_count, total_submission_count, excluded_context_note,
+    )
+    return _email_shell(
+        assignment_title, subtitle_html, body_html, preheader,
+        _footer_classwide_report_html(coursework_id),
+    )
 
 
 def _student_email_html(student_name: str, class_name: str, assignment_title: str, content: str) -> str:

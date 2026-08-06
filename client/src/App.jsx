@@ -33,6 +33,10 @@ function App() {
   // Courses (nothing to report on yet is the common case), 'report' when
   // arriving via the Reports screen (the whole point of that click is the report)
   const [detailInitialTab, setDetailInitialTab] = useState('context')
+  // Which sub-view the Report tab's Students/classwide toggle should start
+  // on — only ever 'students' when arriving via a deep link that asked for
+  // it (see the coursework_id/view effect below); 'classwide' otherwise
+  const [detailInitialReportMode, setDetailInitialReportMode] = useState('classwide')
 
   // On first load, check if the teacher already has an active session
   useEffect(() => {
@@ -93,14 +97,19 @@ function App() {
 
   // Deep link from a "ready to build" reminder email — lands straight on that
   // assignment's Report tab instead of the Courses screen, so the one click
-  // in the email is the one click it takes to get building.
+  // in the email is the one click it takes to get building. An optional
+  // view=students alongside it (from Auto-Send emails) lands on the Students
+  // sub-tab specifically, instead of the classwide summary the teacher
+  // likely just read in the email itself.
   useEffect(() => {
     if (synced.length === 0) return
     const params = new URLSearchParams(window.location.search)
     const courseworkId = params.get('coursework_id')
     if (!courseworkId) return
-    handleViewAssignmentById(Number(courseworkId))
+    const view = params.get('view')
+    handleViewAssignmentById(Number(courseworkId), view === 'students' ? 'students' : 'classwide')
     params.delete('coursework_id')
+    params.delete('view')
     const newSearch = params.toString()
     window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -153,6 +162,7 @@ function App() {
     setSelectedAssignment({ ...assignment, course_name: selectedCourse.course_name })
     setSelectedSyncedRecord(syncedRecord)
     setDetailInitialTab('context')
+    setDetailInitialReportMode('classwide')
     setScreen('detail')
   }
 
@@ -183,7 +193,7 @@ function App() {
   // Everything needed is already sitting in the synced record — a report only
   // ever exists for an assignment that's already been synced, so there's no
   // need for a live Google lookup here at all.
-  function handleViewAssignmentById(courseworkId) {
+  function handleViewAssignmentById(courseworkId, reportMode = 'classwide') {
     const syncedRecord = synced.find((cw) => cw.coursework_id === courseworkId)
     if (!syncedRecord) return
     setSelectedCourse({ course_id: syncedRecord.google_course_id, course_name: syncedRecord.course_name })
@@ -196,6 +206,7 @@ function App() {
     })
     setSelectedSyncedRecord(syncedRecord)
     setDetailInitialTab('report')
+    setDetailInitialReportMode(reportMode)
     setScreen('detail')
   }
 
@@ -235,6 +246,7 @@ function App() {
         assignment={selectedAssignment}
         syncedRecord={selectedSyncedRecord}
         initialTab={detailInitialTab}
+        initialReportMode={detailInitialReportMode}
         onBack={handleBackToAssignments}
         onDataChange={refreshSynced}
       />

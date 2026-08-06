@@ -21,3 +21,18 @@ class User(Base):
     email_notifications_enabled = Column(Boolean, nullable=False, server_default="false")
     # Cadence used when email_notifications_enabled is true — daily | weekly
     notification_preference = Column(Text, nullable=False, server_default="daily")
+
+    # Independent of the reminder-digest settings above — auto-builds and emails a
+    # class-wide report once an assignment is past due and has enough submissions,
+    # instead of just reminding the teacher to build it themselves. Beta feature.
+    immediate_reports_enabled = Column(Boolean, nullable=False, server_default="false")
+    # Floor for how many real submissions must be in before an Immediate auto-build
+    # fires — teacher-configurable, but never allowed below
+    # MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT (see controllers/report.py), since
+    # build_report itself would reject anything under that anyway
+    immediate_min_submissions = Column(Integer, nullable=False, server_default="5")
+    # Which coursework types are eligible for Immediate auto-build — both true by
+    # default (no filtering). A coursework whose work_type isn't stored yet (null,
+    # not yet synced under this field) is excluded regardless of these settings.
+    immediate_include_assignments = Column(Boolean, nullable=False, server_default="true")
+    immediate_include_short_answer = Column(Boolean, nullable=False, server_default="true")
