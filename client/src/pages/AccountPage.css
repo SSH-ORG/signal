@@ -209,6 +209,34 @@
   gap: 10px;
 }
 
+.account-checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.account-checkbox-group-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.account-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+.account-checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .account-field--inline {
   display: flex;
   flex-direction: row;

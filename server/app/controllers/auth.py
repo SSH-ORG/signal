@@ -125,6 +125,8 @@ def _serialize_user(user: User) -> dict:
         "notification_preference": user.notification_preference or "daily",
         "immediate_reports_enabled": user.immediate_reports_enabled,
         "immediate_min_submissions": user.immediate_min_submissions or MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT,
+        "immediate_include_assignments": user.immediate_include_assignments,
+        "immediate_include_short_answer": user.immediate_include_short_answer,
     }
 
 
@@ -158,6 +160,8 @@ async def update_profile(
     notification_preference: str | None,
     immediate_reports_enabled: bool | None,
     immediate_min_submissions: int | None,
+    immediate_include_assignments: bool | None,
+    immediate_include_short_answer: bool | None,
     user: User,
     db: Session,
 ):
@@ -179,6 +183,10 @@ async def update_profile(
             max(immediate_min_submissions, MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT),
             MAX_IMMEDIATE_MIN_SUBMISSIONS,
         )
+    if immediate_include_assignments is not None:
+        user.immediate_include_assignments = immediate_include_assignments
+    if immediate_include_short_answer is not None:
+        user.immediate_include_short_answer = immediate_include_short_answer
 
     db.commit()
     db.refresh(user)

@@ -458,6 +458,7 @@ async def sync_coursework(
     course_name: str = "",
     due_date: str | None = None,
     roster: dict | None = None,
+    work_type: str | None = None,
 ) -> dict:
     # Syncs a Google Classroom assignment into our database
     # If it was already synced before, syncs any new submissions instead of blocking
@@ -484,6 +485,11 @@ async def sync_coursework(
                 coursework.course_name = course_name
             if course_id and not coursework.google_course_id:
                 coursework.google_course_id = course_id
+            # Backfills work_type for rows synced before this column existed —
+            # a coursework's type never changes in Classroom, so once known it's
+            # never overwritten (mirrors google_course_id's backfill-only behavior)
+            if work_type and not coursework.work_type:
+                coursework.work_type = work_type
             # due_date isn't a "created once" fact like context — it can genuinely
             # change (a teacher extends a deadline), so it always takes the
             # freshest value passed in rather than only backfilling
@@ -518,6 +524,7 @@ async def sync_coursework(
                 # Falls back to parsing the freshly-fetched courseWork detail directly,
                 # in case the caller didn't already have a live due date on hand
                 due_date=parsed_due_date if due_date is not None else _parse_due_date(cw_data),
+                work_type=work_type or cw_data.get("workType"),
             )
             db.add(coursework)
             db.commit()
@@ -686,6 +693,7 @@ async def sync_course_coursework(course_id: str, course_name: str, user: User, d
             course_name=course_name,
             due_date=due_date.isoformat() if due_date else None,
             roster=roster,
+            work_type=cw.get("workType"),
         )
         synced_count += 1
 

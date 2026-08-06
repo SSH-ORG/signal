@@ -39,6 +39,8 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
   // see handleImmediateToggleClick for why enabling it goes through a modal first
   const [immediateEnabled, setImmediateEnabled] = useState(!!user.immediate_reports_enabled)
   const [immediateMinSubmissions, setImmediateMinSubmissions] = useState(String(user.immediate_min_submissions || 5))
+  const [includeAssignments, setIncludeAssignments] = useState(user.immediate_include_assignments !== false)
+  const [includeShortAnswer, setIncludeShortAnswer] = useState(user.immediate_include_short_answer !== false)
   const [savingImmediate, setSavingImmediate] = useState(false)
   const [showImmediateModal, setShowImmediateModal] = useState(false)
 
@@ -121,17 +123,35 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
     }
   }
 
-  async function handleEnableImmediate(minSubmissions) {
+  async function handleEnableImmediate(minSubmissions, includeAssignmentsValue, includeShortAnswerValue) {
     setSavingImmediate(true)
     try {
       const updated = await updateProfile({
         immediate_reports_enabled: true,
         immediate_min_submissions: minSubmissions,
+        immediate_include_assignments: includeAssignmentsValue,
+        immediate_include_short_answer: includeShortAnswerValue,
       })
       onProfileUpdated(updated)
       setImmediateEnabled(true)
       setImmediateMinSubmissions(String(updated.immediate_min_submissions || minSubmissions))
+      setIncludeAssignments(updated.immediate_include_assignments !== false)
+      setIncludeShortAnswer(updated.immediate_include_short_answer !== false)
       setShowImmediateModal(false)
+    } finally {
+      setSavingImmediate(false)
+    }
+  }
+
+  async function handleToggleIncludeType(field, setter, prev) {
+    const next = !prev
+    setter(next)
+    setSavingImmediate(true)
+    try {
+      const updated = await updateProfile({ [field]: next })
+      onProfileUpdated(updated)
+    } catch {
+      setter(prev)
     } finally {
       setSavingImmediate(false)
     }
@@ -321,6 +341,31 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
                   </button>
                 </div>
               </div>
+              <div className="account-checkbox-group">
+                <span className="account-checkbox-group-label">Only send reports for:</span>
+                <label className="account-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={includeAssignments}
+                    onChange={() => handleToggleIncludeType(
+                      'immediate_include_assignments', setIncludeAssignments, includeAssignments,
+                    )}
+                    disabled={savingImmediate}
+                  />
+                  Full assignments
+                </label>
+                <label className="account-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={includeShortAnswer}
+                    onChange={() => handleToggleIncludeType(
+                      'immediate_include_short_answer', setIncludeShortAnswer, includeShortAnswer,
+                    )}
+                    disabled={savingImmediate}
+                  />
+                  Short-answer questions
+                </label>
+              </div>
               {Number(immediateMinSubmissions) < MIN_IMMEDIATE_SUBMISSIONS && (
                 <p className="detail-section-hint detail-section-hint--warning">
                   Minimum is 5 submissions.
@@ -416,6 +461,8 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
       {showImmediateModal && (
         <ImmediateModal
           initialMinSubmissions={immediateMinSubmissions}
+          initialIncludeAssignments={includeAssignments}
+          initialIncludeShortAnswer={includeShortAnswer}
           saving={savingImmediate}
           onCancel={() => setShowImmediateModal(false)}
           onConfirm={handleEnableImmediate}
@@ -429,8 +476,12 @@ function AccountPage({ user, onProfileUpdated, onLoggedOut }) {
 // what it does, what it doesn't, what affects report quality, and lets them
 // set their submission threshold, all in one place, since the goal is that a
 // teacher shouldn't need to come back here again after enabling it.
-function ImmediateModal({ initialMinSubmissions, saving, onCancel, onConfirm }) {
+function ImmediateModal({
+  initialMinSubmissions, initialIncludeAssignments, initialIncludeShortAnswer, saving, onCancel, onConfirm,
+}) {
   const [minSubmissions, setMinSubmissions] = useState(String(initialMinSubmissions || 5))
+  const [includeAssignments, setIncludeAssignments] = useState(initialIncludeAssignments !== false)
+  const [includeShortAnswer, setIncludeShortAnswer] = useState(initialIncludeShortAnswer !== false)
   const belowFloor = Number(minSubmissions) < MIN_IMMEDIATE_SUBMISSIONS
   const aboveCeiling = Number(minSubmissions) > MAX_IMMEDIATE_SUBMISSIONS
 
@@ -503,11 +554,30 @@ function ImmediateModal({ initialMinSubmissions, saving, onCancel, onConfirm }) 
         {aboveCeiling && (
           <p className="detail-section-hint detail-section-hint--warning">Max 50 submissions.</p>
         )}
+        <div className="account-checkbox-group">
+          <span className="account-checkbox-group-label">Only send reports for:</span>
+          <label className="account-checkbox-row">
+            <input
+              type="checkbox"
+              checked={includeAssignments}
+              onChange={() => setIncludeAssignments((v) => !v)}
+            />
+            Full assignments
+          </label>
+          <label className="account-checkbox-row">
+            <input
+              type="checkbox"
+              checked={includeShortAnswer}
+              onChange={() => setIncludeShortAnswer((v) => !v)}
+            />
+            Short-answer questions
+          </label>
+        </div>
         <div className="detail-actions">
           <button
             type="button"
             className="primary-btn"
-            onClick={() => onConfirm(clampMinSubmissions(Number(minSubmissions)))}
+            onClick={() => onConfirm(clampMinSubmissions(Number(minSubmissions)), includeAssignments, includeShortAnswer)}
             disabled={saving || belowFloor || aboveCeiling}
           >
             {saving ? 'Enabling ..' : 'Enable Auto-Send'}

@@ -28,6 +28,7 @@ class Coursework(Base):
     google_course_id = Column(Text)                                           # Google Classroom course (class) ID — needed to re-sync submissions in the background
     course_name = Column(Text, default="")                                    # Google Classroom course name — stored so it's available even after a course is archived
     due_date = Column(DateTime, nullable=True)                                # From Classroom's dueDate/dueTime — null if the assignment has none set
+    work_type = Column(Text, nullable=True)                                  # Classroom's workType (ASSIGNMENT/SHORT_ANSWER_QUESTION) — null until synced
 
     # One coursework has many submissions (one per enrolled student, see Submission).
     # cascade="all, delete" means deleting a coursework also deletes its submissions.

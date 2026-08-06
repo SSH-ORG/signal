@@ -21,6 +21,8 @@ class ProfileUpdateRequest(BaseModel):
     # Independent of the two fields above — beta auto-build-and-send feature
     immediate_reports_enabled: bool | None = None
     immediate_min_submissions: int | None = None
+    immediate_include_assignments: bool | None = None
+    immediate_include_short_answer: bool | None = None
 
 
 # Redirects teacher to Google login page
@@ -57,7 +59,8 @@ async def update_profile(
     return await auth_controller.update_profile(
         body.display_name, body.email, body.email_notifications_enabled,
         body.notification_preference, body.immediate_reports_enabled,
-        body.immediate_min_submissions, user, db,
+        body.immediate_min_submissions, body.immediate_include_assignments,
+        body.immediate_include_short_answer, user, db,
     )
 
 

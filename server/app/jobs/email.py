@@ -197,9 +197,19 @@ async def send_immediate_reports(user: User, db: Session) -> int:
         .filter(~Coursework.report.has())
         .all()
     )
+    # Teacher-configurable filter on coursework type — a coursework whose
+    # work_type isn't synced yet (null) is excluded from either set, so it
+    # never auto-sends until a sync confirms its type.
+    allowed_types = set()
+    if user.immediate_include_assignments:
+        allowed_types.add("ASSIGNMENT")
+    if user.immediate_include_short_answer:
+        allowed_types.add("SHORT_ANSWER_QUESTION")
+
     ready = [
         cw for cw in candidates
-        if cw.context and cw.context.strip()
+        if cw.work_type in allowed_types
+        and cw.context and cw.context.strip()
         and sum(1 for s in cw.submissions if s.content and s.content.strip()) >= min_submissions
     ]
 

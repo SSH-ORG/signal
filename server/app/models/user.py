@@ -31,3 +31,8 @@ class User(Base):
     # MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT (see controllers/report.py), since
     # build_report itself would reject anything under that anyway
     immediate_min_submissions = Column(Integer, nullable=False, server_default="5")
+    # Which coursework types are eligible for Immediate auto-build — both true by
+    # default (no filtering). A coursework whose work_type isn't stored yet (null,
+    # not yet synced under this field) is excluded regardless of these settings.
+    immediate_include_assignments = Column(Boolean, nullable=False, server_default="true")
+    immediate_include_short_answer = Column(Boolean, nullable=False, server_default="true")
