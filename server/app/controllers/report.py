@@ -27,7 +27,8 @@ MIN_SUBMISSIONS_FOR_CLASSWIDE_REPORT = 5
 MAX_SUBMISSIONS_FOR_CLASSWIDE_REPORT = 50
 
 # Initialize the Groq client — free tier, no credit card required
-# Uses Llama 3.3 70B which is strong enough for educational text analysis
+# Llama 3.3 70B was retired from Groq's catalog; gpt-oss-120b is the current
+# comparable-tier model for educational text analysis
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 
@@ -40,7 +41,7 @@ def _call_groq(prompt: str) -> str:
     # grounded — less creative drift.
     try:
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
         )
